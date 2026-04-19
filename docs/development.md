@@ -56,6 +56,8 @@ quickshell ipc --path quickshell call dynamicGlacier volume 72 false
 quickshell ipc --path quickshell call dynamicGlacier handle bump
 quickshell ipc --path quickshell call dynamicGlacier handle strip
 quickshell ipc --path quickshell call dynamicGlacier toggleHandle
+quickshell ipc --path quickshell call dynamicGlacier live true
+quickshell ipc --path quickshell call dynamicGlacier live false
 quickshell ipc --path quickshell call dynamicGlacier idle
 ```
 
@@ -105,6 +107,40 @@ Do not kill all Quickshell instances unless you intentionally want to stop the m
 
 If a change affects runtime behavior, test it with `timeout 5 quickshell --path quickshell --verbose` and at least one IPC command.
 
+## Live Link Tests
+
+Dynamic Glacier currently listens to:
+
+- MPRIS media players through `Quickshell.Services.Mpris`
+- PipeWire default sink volume through `Quickshell.Services.Pipewire`
+- UPower display battery through `Quickshell.Services.UPower`
+
+Check available live sources:
+
+```sh
+playerctl -l
+playerctl metadata --format '{{playerName}}|{{status}}|{{artist}}|{{title}}'
+wpctl get-volume @DEFAULT_AUDIO_SINK@
+upower -e
+upower -i /org/freedesktop/UPower/devices/DisplayDevice
+```
+
+Safe volume event test:
+
+```sh
+wpctl set-volume @DEFAULT_AUDIO_SINK@ 1%+
+wpctl set-volume @DEFAULT_AUDIO_SINK@ 1%-
+```
+
+Optional media event test:
+
+```sh
+playerctl play-pause
+playerctl play-pause
+```
+
+The media test intentionally toggles playback; do not run it if you do not want to touch the active player.
+
 ## Development Rules
 
 - Do not create repo-local `AGENTS.md`; project memory belongs in `/home/mavxa/zed/agents/`.
@@ -113,6 +149,7 @@ If a change affects runtime behavior, test it with `timeout 5 quickshell --path 
 - Do not depend on JS/HTML/CSS, Electron, webviews, AGS, or EWW for the main UI.
 - Prefer a small runnable QML slice over speculative architecture.
 - Keep state changes centralized in `DynamicGlacier.qml`; services should request mode transitions, not resize the island directly.
+- Keep live service listeners non-owning. MPRIS, PipeWire, and UPower are safe; notifications need bridge/integration work.
 - Keep the visual identity minimal, OLED-friendly, and distinct from Apple's Dynamic Island.
 - Default visuals should be pure black first; add visible decoration only when it materially improves interaction clarity.
 - Keep the island in normal `WlrLayer.Top` with `ExclusionMode.Normal`, but keep `exclusiveZone` constant and small.
@@ -140,6 +177,12 @@ quickshell ipc --path quickshell call dynamicGlacier handle strip
 If a gap appears between the island and the top screen edge, check `expandedTopMargin` in `DynamicGlacier.qml`. It should stay `0`; the island should grow downward from the top edge.
 
 If text looks clipped or deformed, check `IslandSurface.qml` z-ordering. Background shape rectangles should stay below `IslandContent`.
+
+If live events get annoying while editing, disable them temporarily:
+
+```sh
+quickshell ipc --path quickshell call dynamicGlacier live false
+```
 
 ## Next Useful Tests
 

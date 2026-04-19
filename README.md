@@ -8,7 +8,9 @@ The main design philosophy is minimalism: the idle widget should be a small pure
 
 ## Status
 
-Early prototype. The first slice is a standalone Quickshell config with a polished animated shell and manual IPC triggers. Real notification/media/audio service adapters are intentionally not enabled yet, so the prototype can run next to an existing end-4 setup without taking over the notification daemon.
+Early prototype. The first slice is a standalone Quickshell config with a polished animated shell, manual IPC triggers, and live links for MPRIS media, PipeWire volume, and UPower battery events.
+
+Notifications are intentionally not handled through a standalone notification daemon yet, so the prototype can run next to an existing end-4 setup without taking over `org.freedesktop.Notifications`.
 
 ## Run
 
@@ -26,6 +28,7 @@ quickshell ipc --path quickshell call dynamicGlacier notify "Build finished" "Dy
 quickshell ipc --path quickshell call dynamicGlacier media "Night Drive" "Glacier FM" true
 quickshell ipc --path quickshell call dynamicGlacier volume 72 false
 quickshell ipc --path quickshell call dynamicGlacier toggleHandle
+quickshell ipc --path quickshell call dynamicGlacier live true
 quickshell ipc --path quickshell call dynamicGlacier idle
 ```
 
@@ -45,6 +48,9 @@ quickshell ipc --path quickshell call dynamicGlacier demoLoop
 - sharp top corners and rounded bottom corners
 - hover-to-peek and click-to-pin interaction
 - animated idle, notification, media, and volume states
+- live MPRIS media link
+- live PipeWire volume link
+- live UPower battery event link
 - focused-monitor placement under Hyprland
 - transparent click mask around the island
 - IPC functions for manual testing
@@ -56,9 +62,9 @@ Developer workflow and test commands are in [`docs/development.md`](docs/develop
 ## Next Milestones
 
 - add a clean config surface for size, colors, timing, and monitor behavior
-- connect MPRIS media state
-- connect PipeWire volume state
+- add privacy indicators for microphone and screen sharing
 - decide how to integrate notifications without fighting the end-4 notification service
+- design notification bridge/integration for end-4
 - document end-4 installation options
 
 ## References

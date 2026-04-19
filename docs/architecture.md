@@ -25,14 +25,19 @@ Transient modes use a collapse timer and return to `idle`. Later service adapter
 
 ## Service Strategy
 
-The first prototype exposes manual IPC commands through `IpcHandler`.
+The prototype exposes manual IPC commands through `IpcHandler` and also listens to non-owning live desktop services.
 
-Real adapters should be added in this order:
+Current live adapters:
 
-- MPRIS media adapter
-- PipeWire volume adapter
-- notification adapter or end-4 integration hook
+- MPRIS media changes
+- PipeWire default sink volume/mute changes
+- UPower battery state/threshold changes
+
+Adapters still to add:
+
+- PipeWire privacy indicators for microphone and screen sharing
 - Hyprland workspace/window adapter
+- notification adapter or end-4 integration hook
 
 Notifications need special care because only one notification server should own `org.freedesktop.Notifications`. A standalone Dynamic Glacier notification server can conflict with end-4 dots if both are running. Prefer an end-4 module integration path or a passive bridge before enabling a standalone notification daemon by default.
 
