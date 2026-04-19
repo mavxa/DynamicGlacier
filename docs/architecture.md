@@ -19,9 +19,12 @@ The island has one active mode at a time:
 - `idle`
 - `notify`
 - `media`
-- `volume`
 
 Transient modes use a collapse timer and return to `idle`. Later service adapters should not resize the island directly. They should request a mode transition through the central controller.
+
+Volume is not a mode. It is a temporary overlay controlled by `volumeIndicatorVisible`, so the widget does not duplicate the existing end-4 volume OSD.
+
+There is also a visual-only hover override: when the real mode is `idle` and a MPRIS player has active media, the surface can render the `media` layout on hover without committing the controller mode to `media`.
 
 ## Service Strategy
 
@@ -32,6 +35,15 @@ Current live adapters:
 - MPRIS media changes
 - PipeWire default sink volume/mute changes
 - UPower battery state/threshold changes
+
+Volume is intentionally not a full expanded island mode while end-4's OSD is active. It should be a quiet open U-shaped trace just inside the current island perimeter, with no top connection.
+
+Media controls are direct MPRIS actions on the active player:
+
+- previous
+- play/pause
+- next
+- progress from player position/length
 
 Adapters still to add:
 
@@ -49,7 +61,8 @@ Notifications need special care because only one notification server should own 
 - On OLED displays the idle state should look almost invisible until the user hovers, clicks, or an event arrives.
 - The island should reserve only a small constant top space in Hyprland for the idle handle.
 - Hover expansion may overlap windows; do not let Hyprland push windows down on every hover.
-- The attached-to-top shape should have sharp top corners and rounded bottom corners.
+- The attached-to-top shape should keep sharp top corners at the screen edge and stronger rounded bottom corners below.
+- Volume indication should follow the lower/sides shape just inside the edge. It must not draw a top line or form a closed loop.
 - Avoid generic glassmorphism, glow-heavy effects, and decorative color by default.
 - Animate size, radius, content opacity, and progress together.
 - Do not let long text cause layout jumps.

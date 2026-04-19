@@ -25,7 +25,7 @@ In another terminal, trigger states:
 ```sh
 quickshell ipc --path quickshell call dynamicGlacier demo
 quickshell ipc --path quickshell call dynamicGlacier notify "Build finished" "Dynamic Glacier is alive" "Hello"
-quickshell ipc --path quickshell call dynamicGlacier media "Night Drive" "Glacier FM" true
+quickshell ipc --path quickshell call dynamicGlacier media "Night Drive" "Glacier FM" true ""
 quickshell ipc --path quickshell call dynamicGlacier volume 72 false
 quickshell ipc --path quickshell call dynamicGlacier toggleHandle
 quickshell ipc --path quickshell call dynamicGlacier live true
@@ -47,8 +47,10 @@ quickshell ipc --path quickshell call dynamicGlacier demoLoop
 - test switch between `bump` and barely visible `strip` handle
 - sharp top corners and rounded bottom corners
 - hover-to-peek and click-to-pin interaction
-- animated idle, notification, media, and volume states
+- animated idle, notification, and media states
+- subtle open U-shaped volume trace instead of a second volume mixer
 - live MPRIS media link
+- hover media player with artwork, timeline, and previous/play-pause/next controls
 - live PipeWire volume link
 - live UPower battery event link
 - focused-monitor placement under Hyprland

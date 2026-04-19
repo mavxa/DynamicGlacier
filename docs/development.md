@@ -30,11 +30,12 @@ Idle behavior:
 - it reserves only a small constant top zone through layer-shell
 - hover expansion can overlap windows; this avoids Hyprland pushing windows down on every hover
 - the visible strip can be very thin, but the idle hitbox remains as tall as the reserved zone
-- top corners are sharp because the shape is attached to the screen edge
+- top corners are sharp where the shape touches the screen edge
 - bottom corners are rounded because the visible bump grows downward
 - hover the bump to expand it temporarily
+- if a MPRIS player has active media, hovering the bump shows a compact media player instead of the generic idle peek
 - click the bump to pin or unpin the expanded idle state
-- click while an event state is visible to collapse back to idle
+- click while a non-media event state is visible to collapse back to idle
 
 ## Trigger Test States
 
@@ -51,7 +52,7 @@ Manual state triggers:
 ```sh
 quickshell ipc --path quickshell call dynamicGlacier demo
 quickshell ipc --path quickshell call dynamicGlacier notify "Build finished" "Dynamic Glacier is alive" "Codex"
-quickshell ipc --path quickshell call dynamicGlacier media "Night Drive" "Glacier FM" true
+quickshell ipc --path quickshell call dynamicGlacier media "Night Drive" "Glacier FM" true ""
 quickshell ipc --path quickshell call dynamicGlacier volume 72 false
 quickshell ipc --path quickshell call dynamicGlacier handle bump
 quickshell ipc --path quickshell call dynamicGlacier handle strip
@@ -102,7 +103,8 @@ Do not kill all Quickshell instances unless you intentionally want to stop the m
 - `quickshell/shell.qml`: root entrypoint. Keep this small.
 - `quickshell/modules/dynamicGlacier/DynamicGlacier.qml`: state machine, timers, window placement, IPC API.
 - `quickshell/modules/dynamicGlacier/IslandSurface.qml`: outer shape, glow, background, animation of shell geometry.
-- `quickshell/modules/dynamicGlacier/IslandContent.qml`: per-mode content layout for idle, notification, media, and volume.
+- `quickshell/modules/dynamicGlacier/IslandContent.qml`: per-mode content layout for idle, notification, and media.
+- `quickshell/modules/dynamicGlacier/IslandSurface.qml`: also owns the subtle open U-shaped volume trace.
 - `docs/architecture.md`: bigger design decisions and integration notes.
 
 If a change affects runtime behavior, test it with `timeout 5 quickshell --path quickshell --verbose` and at least one IPC command.
@@ -115,11 +117,22 @@ Dynamic Glacier currently listens to:
 - PipeWire default sink volume through `Quickshell.Services.Pipewire`
 - UPower display battery through `Quickshell.Services.UPower`
 
+Volume deliberately does not open a full island state because end-4 already has its own volume OSD. It only paints a light gray open U-shaped trace just inside the current island perimeter for about a second; the top edge must stay unconnected.
+
+Media hover behavior:
+
+- hovering the idle handle shows the media layout when a MPRIS player has an active track
+- the media layout should stay compact; fix clipping with internal padding and smaller controls/artwork, not by making the island tall
+- album art is read from MPRIS `trackArtUrl`; if it is missing or not loaded, the widget falls back to the minimal equalizer mark
+- track progress uses the active MPRIS player's `position` and `length`; the formatter accepts either seconds or MPRIS microseconds
+- previous, play/pause, and next buttons sit under the timeline and call the active MPRIS player directly through Quickshell
+- while the media layout is visible, the hover hitbox does not accept clicks so the player buttons can receive them
+
 Check available live sources:
 
 ```sh
 playerctl -l
-playerctl metadata --format '{{playerName}}|{{status}}|{{artist}}|{{title}}'
+playerctl metadata --format '{{playerName}}|{{status}}|{{position}}|{{mpris:length}}|{{artist}}|{{title}}|{{mpris:artUrl}}'
 wpctl get-volume @DEFAULT_AUDIO_SINK@
 upower -e
 upower -i /org/freedesktop/UPower/devices/DisplayDevice
@@ -154,7 +167,7 @@ The media test intentionally toggles playback; do not run it if you do not want 
 - Default visuals should be pure black first; add visible decoration only when it materially improves interaction clarity.
 - Keep the island in normal `WlrLayer.Top` with `ExclusionMode.Normal`, but keep `exclusiveZone` constant and small.
 - Do not bind `exclusiveZone` to expanded island height; that makes Hyprland push windows down during hover.
-- Keep the attached-top silhouette: sharp top corners, rounded bottom corners.
+- Keep the attached-top silhouette: sharp top corners, strongly rounded bottom corners.
 
 ## Common Failure Modes
 
@@ -189,5 +202,6 @@ quickshell ipc --path quickshell call dynamicGlacier live false
 - Run with the main end-4 shell active and verify there is no notification daemon conflict.
 - Test on each monitor by focusing a window there before starting the widget.
 - Test long notification and media strings for clipping and layout jumps.
-- Test volume values `0`, `1`, `50`, `100`, and muted state.
+- Test volume values `0`, `1`, `50`, `100`, and muted state; verify only the open U-shaped trace appears, not a second mixer and not a top-connected loop.
+- Test media hover with an active player and verify the timeline updates and previous/play-pause/next buttons are clickable.
 - Keep an eye on animation feel after each visual change; aggressive motion will get annoying quickly.

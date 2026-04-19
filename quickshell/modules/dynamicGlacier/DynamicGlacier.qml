@@ -16,8 +16,10 @@ Scope {
     property string title: "Ready"
     property string body: "Waiting for a signal"
     property string artist: ""
+    property string artUrl: ""
     property int volume: 42
     property bool muted: false
+    property bool volumeIndicatorVisible: false
     property bool playing: true
     property bool demoRunning: false
     property bool pointerInside: false
@@ -34,10 +36,12 @@ Scope {
     property int demoStep: 0
 
     readonly property bool interactionOpen: root.mode === "idle" && (root.pointerInside || root.pinnedOpen)
+    readonly property bool hoverMediaMode: root.liveLinksEnabled && root.mode === "idle" && root.interactionOpen && root.hasActiveMedia()
+    readonly property string visualMode: root.hoverMediaMode ? "media" : root.mode
     readonly property int idleTopMargin: 0
     readonly property int expandedTopMargin: 0
     readonly property int reservedZone: 16
-    readonly property int windowHeight: 112
+    readonly property int windowHeight: 120
     readonly property int bumpWidth: 76
     readonly property int bumpHeight: 16
     readonly property int stripWidth: 168
@@ -46,21 +50,22 @@ Scope {
     readonly property int peekHeight: 48
     readonly property int notifyWidth: 438
     readonly property int notifyHeight: 74
-    readonly property int mediaWidth: 398
-    readonly property int mediaHeight: 70
-    readonly property int volumeWidth: 276
-    readonly property int volumeHeight: 58
+    readonly property int mediaWidth: 420
+    readonly property int mediaHeight: 120
     readonly property string fontFamily: "Noto Sans"
     readonly property var audioSink: Pipewire.defaultAudioSink
+    readonly property bool mediaCanGoPrevious: root.activePlayer?.canGoPrevious ?? false
+    readonly property bool mediaCanTogglePlaying: (root.activePlayer?.canTogglePlaying ?? false) || (root.activePlayer?.canPause ?? false) || (root.activePlayer?.canPlay ?? false)
+    readonly property bool mediaCanGoNext: root.activePlayer?.canGoNext ?? false
+    readonly property real mediaPosition: Math.max(0, root.activePlayer?.position ?? 0)
+    readonly property real mediaLength: Math.max(0, root.activePlayer?.length ?? 0)
 
     function targetWidth() {
-        switch (root.mode) {
+        switch (root.visualMode) {
         case "notify":
             return root.notifyWidth;
         case "media":
             return root.mediaWidth;
-        case "volume":
-            return root.volumeWidth;
         default:
             if (root.interactionOpen)
                 return root.peekWidth;
@@ -69,13 +74,11 @@ Scope {
     }
 
     function targetHeight() {
-        switch (root.mode) {
+        switch (root.visualMode) {
         case "notify":
             return root.notifyHeight;
         case "media":
             return root.mediaHeight;
-        case "volume":
-            return root.volumeHeight;
         default:
             if (root.interactionOpen)
                 return root.peekHeight;
@@ -84,7 +87,7 @@ Scope {
     }
 
     function targetY() {
-        return root.mode === "idle" && !root.interactionOpen ? root.idleTopMargin : root.expandedTopMargin;
+        return root.visualMode === "idle" && !root.interactionOpen ? root.idleTopMargin : root.expandedTopMargin;
     }
 
     function hold(milliseconds) {
@@ -117,13 +120,15 @@ Scope {
         root.appName = app || "Notification";
         root.title = summary || "New notification";
         root.body = message || "";
+        root.artUrl = "";
         root.mode = "notify";
         root.hold(5200);
     }
 
-    function showMedia(trackTitle, trackArtist, isPlaying) {
+    function showMedia(trackTitle, trackArtist, isPlaying, trackArtUrl) {
         root.title = trackTitle || "Unknown track";
         root.artist = trackArtist || "Unknown artist";
+        root.artUrl = trackArtUrl || "";
         root.playing = isPlaying;
         root.mode = "media";
         root.hold(6200);
@@ -133,8 +138,8 @@ Scope {
         root.volume = Math.max(0, Math.min(100, Number(level)));
         root.muted = isMuted;
         root.title = root.muted ? "Muted" : "Volume";
-        root.mode = "volume";
-        root.hold(1700);
+        root.volumeIndicatorVisible = true;
+        volumeIndicatorTimer.restart();
     }
 
     function trackTitle(player) {
@@ -145,16 +150,34 @@ Scope {
         return player?.trackArtist || player?.identity || "Unknown artist";
     }
 
+    function trackArtUrl(player) {
+        return player?.trackArtUrl || "";
+    }
+
     function trackKey(player) {
         if (!player)
             return "";
 
-        return [
-            player.uniqueId || player.dbusName || "",
-            root.trackTitle(player),
-            root.trackArtist(player),
-            player.isPlaying ? "playing" : "paused"
-        ].join("|");
+        return [player.uniqueId || player.dbusName || "", root.trackTitle(player), root.trackArtist(player), player.isPlaying ? "playing" : "paused"].join("|");
+    }
+
+    function syncMediaFields(player) {
+        if (!player)
+            return;
+
+        root.title = root.trackTitle(player);
+        root.artist = root.trackArtist(player);
+        root.artUrl = root.trackArtUrl(player);
+        root.playing = player.isPlaying;
+    }
+
+    function hasActiveMedia() {
+        const player = root.activePlayer;
+
+        if (!player)
+            return false;
+
+        return player.isPlaying || root.trackTitle(player) !== "Unknown track";
     }
 
     function chooseActivePlayer(preferredPlayer) {
@@ -175,6 +198,39 @@ Scope {
         root.activePlayer = players.length > 0 ? players[0] : null;
     }
 
+    function prepareHoverMedia() {
+        if (!root.liveLinksEnabled)
+            return;
+
+        root.chooseActivePlayer(null);
+        root.syncMediaFields(root.activePlayer);
+    }
+
+    function mediaPrevious() {
+        if (root.activePlayer?.canGoPrevious)
+            root.activePlayer.previous();
+    }
+
+    function mediaTogglePlaying() {
+        const player = root.activePlayer;
+
+        if (!player)
+            return;
+
+        if (player.canTogglePlaying) {
+            player.togglePlaying();
+        } else if (player.isPlaying && player.canPause) {
+            player.pause();
+        } else if (!player.isPlaying && player.canPlay) {
+            player.play();
+        }
+    }
+
+    function mediaNext() {
+        if (root.activePlayer?.canGoNext)
+            root.activePlayer.next();
+    }
+
     function maybeShowMediaFromPlayer(preferredPlayer, force) {
         if (!root.liveLinksEnabled)
             return;
@@ -186,6 +242,9 @@ Scope {
         if (!player || !key)
             return;
 
+        if (root.hoverMediaMode)
+            root.syncMediaFields(player);
+
         if (!root.liveLinksPrimed) {
             root.lastTrackKey = key;
             return;
@@ -193,7 +252,7 @@ Scope {
 
         if (force || key !== root.lastTrackKey) {
             root.lastTrackKey = key;
-            root.showMedia(root.trackTitle(player), root.trackArtist(player), player.isPlaying);
+            root.showMedia(root.trackTitle(player), root.trackArtist(player), player.isPlaying, root.trackArtUrl(player));
         }
     }
 
@@ -268,6 +327,7 @@ Scope {
 
     function primeLiveLinks() {
         root.chooseActivePlayer(null);
+        root.syncMediaFields(root.activePlayer);
         root.lastTrackKey = root.trackKey(root.activePlayer);
         root.lastSinkVolume = root.sinkVolumePercent();
         root.lastSinkMuted = root.sinkMuted();
@@ -320,6 +380,24 @@ Scope {
         repeat: true
         running: root.demoRunning
         onTriggered: root.demo()
+    }
+
+    Timer {
+        id: volumeIndicatorTimer
+        interval: 1100
+        repeat: false
+        onTriggered: root.volumeIndicatorVisible = false
+    }
+
+    Timer {
+        interval: 1000
+        repeat: true
+        running: root.visualMode === "media" && root.activePlayer !== null
+        onTriggered: {
+            if (root.activePlayer)
+                root.activePlayer.positionChanged();
+            root.syncMediaFields(root.activePlayer);
+        }
     }
 
     Timer {
@@ -410,17 +488,27 @@ Scope {
                 y: root.targetY()
                 width: root.targetWidth()
                 height: root.targetHeight()
-                mode: root.mode
+                mode: root.visualMode
                 handleStyle: root.handleStyle
                 forceExpanded: root.interactionOpen
                 appName: root.appName
                 title: root.title
                 body: root.body
                 artist: root.artist
+                artUrl: root.artUrl
                 volume: root.volume
                 muted: root.muted
+                volumeIndicatorVisible: root.volumeIndicatorVisible
                 playing: root.playing
+                canGoPrevious: root.mediaCanGoPrevious
+                canTogglePlaying: root.mediaCanTogglePlaying
+                canGoNext: root.mediaCanGoNext
+                mediaPosition: root.mediaPosition
+                mediaLength: root.mediaLength
                 fontFamily: root.fontFamily
+                onPreviousRequested: root.mediaPrevious()
+                onPlayPauseRequested: root.mediaTogglePlaying()
+                onNextRequested: root.mediaNext()
             }
 
             MouseArea {
@@ -432,8 +520,12 @@ Scope {
                 width: island.width
                 height: root.mode === "idle" && !root.interactionOpen ? Math.max(root.reservedZone, island.height) : island.height
                 hoverEnabled: true
+                acceptedButtons: root.visualMode === "media" ? Qt.NoButton : Qt.LeftButton
                 cursorShape: Qt.PointingHandCursor
-                onEntered: root.pointerInside = true
+                onEntered: {
+                    root.pointerInside = true;
+                    root.prepareHoverMedia();
+                }
                 onExited: root.pointerInside = false
                 onClicked: {
                     if (root.mode === "idle")
@@ -468,8 +560,8 @@ Scope {
             root.showNotification(summary, message, app);
         }
 
-        function media(trackTitle: string, trackArtist: string, isPlaying: string): void {
-            root.showMedia(trackTitle, trackArtist, isPlaying === "true" || isPlaying === "playing" || isPlaying === "1");
+        function media(trackTitle: string, trackArtist: string, isPlaying: string, artUrl: string): void {
+            root.showMedia(trackTitle, trackArtist, root.boolFromIpc(isPlaying) || isPlaying === "playing", artUrl);
         }
 
         function volume(level: int, isMuted: string): void {

@@ -9,15 +9,26 @@ Item {
     property string title: ""
     property string body: ""
     property string artist: ""
+    property string artUrl: ""
     property int volume: 0
     property bool muted: false
+    property bool volumeIndicatorVisible: false
     property bool playing: false
+    property bool canGoPrevious: false
+    property bool canTogglePlaying: false
+    property bool canGoNext: false
+    property real mediaPosition: 0
+    property real mediaLength: 0
     property bool forceExpanded: false
     property string handleStyle: "bump"
     property string fontFamily: "Noto Sans"
     readonly property bool expanded: mode !== "idle" || forceExpanded
     readonly property real bottomRadius: height / 2
     readonly property color surfaceColor: !expanded && handleStyle === "strip" ? "#0c0c0c" : "#000000"
+
+    signal previousRequested
+    signal playPauseRequested
+    signal nextRequested
 
     transformOrigin: Item.Top
 
@@ -36,9 +47,7 @@ Item {
                 duration: 220
                 easing.type: Easing.OutCubic
             }
-
         }
-
     }
 
     Rectangle {
@@ -109,9 +118,7 @@ Item {
                     position: 1
                     color: "#00243a00"
                 }
-
             }
-
         }
 
         Rectangle {
@@ -138,10 +145,152 @@ Item {
             opacity: 0
         }
 
+        Canvas {
+            id: volumeTrace
+
+            z: 8
+            anchors.fill: parent
+            opacity: root.volumeIndicatorVisible ? 1 : 0
+
+            function perimeterPoints() {
+                const inset = Math.max(1.5, Math.min(4, height * 0.22, width * 0.08));
+                const left = inset;
+                const right = Math.max(left + 1, width - inset);
+                const openTop = Math.min(height - inset - 1, Math.max(inset + 1, height * 0.18));
+                const bottom = Math.max(openTop + 1, height - inset);
+                const radius = Math.max(0, Math.min(root.bottomRadius - inset, (right - left) / 2, (bottom - openTop) / 2));
+                const arcSteps = 10;
+                const points = [
+                    {
+                        x: left,
+                        y: openTop
+                    },
+                    {
+                        x: left,
+                        y: bottom - radius
+                    }
+                ];
+
+                for (let i = 0; i <= arcSteps; i += 1) {
+                    const angle = Math.PI - i / arcSteps * Math.PI / 2;
+                    points.push({
+                        x: left + radius + Math.cos(angle) * radius,
+                        y: bottom - radius + Math.sin(angle) * radius
+                    });
+                }
+
+                points.push({
+                    x: right - radius,
+                    y: bottom
+                });
+
+                for (let i = 0; i <= arcSteps; i += 1) {
+                    const angle = Math.PI / 2 - i / arcSteps * Math.PI / 2;
+                    points.push({
+                        x: right - radius + Math.cos(angle) * radius,
+                        y: bottom - radius + Math.sin(angle) * radius
+                    });
+                }
+
+                points.push({
+                    x: right,
+                    y: openTop
+                });
+                return points;
+            }
+
+            function distance(a, b) {
+                const dx = b.x - a.x;
+                const dy = b.y - a.y;
+
+                return Math.sqrt(dx * dx + dy * dy);
+            }
+
+            function tracePath(ctx, progress) {
+                const points = perimeterPoints();
+                let total = 0;
+
+                for (let i = 1; i < points.length; i += 1)
+                    total += distance(points[i - 1], points[i]);
+
+                ctx.beginPath();
+                ctx.moveTo(points[0].x, points[0].y);
+
+                if (total <= 0 || progress <= 0)
+                    return;
+
+                const target = total * Math.max(0, Math.min(1, progress));
+                let walked = 0;
+
+                for (let i = 1; i < points.length; i += 1) {
+                    const previous = points[i - 1];
+                    const current = points[i];
+                    const segment = distance(previous, current);
+
+                    if (walked + segment >= target) {
+                        const t = segment === 0 ? 0 : (target - walked) / segment;
+
+                        ctx.lineTo(previous.x + (current.x - previous.x) * t, previous.y + (current.y - previous.y) * t);
+                        return;
+                    }
+
+                    ctx.lineTo(current.x, current.y);
+                    walked += segment;
+                }
+            }
+
+            onPaint: {
+                const ctx = getContext("2d");
+                const progress = root.muted ? 0 : Math.max(0, Math.min(1, root.volume / 100));
+
+                ctx.reset();
+                ctx.clearRect(0, 0, width, height);
+                ctx.lineWidth = 1.45;
+                ctx.lineCap = "round";
+                ctx.lineJoin = "round";
+
+                ctx.strokeStyle = "rgba(170, 170, 170, 0.14)";
+                tracePath(ctx, 1);
+                ctx.stroke();
+
+                if (progress > 0) {
+                    ctx.strokeStyle = "rgba(215, 215, 215, 0.74)";
+                    tracePath(ctx, progress);
+                    ctx.stroke();
+                }
+            }
+
+            Behavior on opacity {
+                NumberAnimation {
+                    duration: 160
+                    easing.type: Easing.OutCubic
+                }
+            }
+
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            onVisibleChanged: requestPaint()
+            Connections {
+                target: root
+
+                function onVolumeChanged() {
+                    volumeTrace.requestPaint();
+                }
+
+                function onMutedChanged() {
+                    volumeTrace.requestPaint();
+                }
+
+                function onVolumeIndicatorVisibleChanged() {
+                    volumeTrace.requestPaint();
+                }
+            }
+        }
+
         IslandContent {
             z: 10
             anchors.fill: parent
-            anchors.margins: root.expanded ? 12 : 0
+            anchors.margins: root.expanded ? (root.mode === "media" ? 10 : 12) : 0
             mode: root.mode
             handleStyle: root.handleStyle
             forceExpanded: root.forceExpanded
@@ -149,12 +298,20 @@ Item {
             title: root.title
             body: root.body
             artist: root.artist
+            artUrl: root.artUrl
             volume: root.volume
             muted: root.muted
             playing: root.playing
+            canGoPrevious: root.canGoPrevious
+            canTogglePlaying: root.canTogglePlaying
+            canGoNext: root.canGoNext
+            mediaPosition: root.mediaPosition
+            mediaLength: root.mediaLength
             fontFamily: root.fontFamily
+            onPreviousRequested: root.previousRequested()
+            onPlayPauseRequested: root.playPauseRequested()
+            onNextRequested: root.nextRequested()
         }
-
     }
 
     Behavior on width {
@@ -162,7 +319,6 @@ Item {
             duration: 360
             easing.type: Easing.OutCubic
         }
-
     }
 
     Behavior on height {
@@ -170,7 +326,6 @@ Item {
             duration: 360
             easing.type: Easing.OutCubic
         }
-
     }
 
     Behavior on y {
@@ -178,7 +333,5 @@ Item {
             duration: 360
             easing.type: Easing.OutCubic
         }
-
     }
-
 }
