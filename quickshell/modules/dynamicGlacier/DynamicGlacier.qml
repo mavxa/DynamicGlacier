@@ -18,14 +18,18 @@ Scope {
     property bool demoRunning: false
     property bool pointerInside: false
     property bool pinnedOpen: false
+    property string handleStyle: "bump"
     property int demoStep: 0
 
     readonly property bool interactionOpen: root.mode === "idle" && (root.pointerInside || root.pinnedOpen)
     readonly property int idleTopMargin: 0
     readonly property int expandedTopMargin: 0
+    readonly property int reservedZone: 16
     readonly property int windowHeight: 112
-    readonly property int idleWidth: 76
-    readonly property int idleHeight: 16
+    readonly property int bumpWidth: 76
+    readonly property int bumpHeight: 16
+    readonly property int stripWidth: 168
+    readonly property int stripHeight: 4
     readonly property int peekWidth: 292
     readonly property int peekHeight: 48
     readonly property int notifyWidth: 438
@@ -45,7 +49,9 @@ Scope {
         case "volume":
             return root.volumeWidth;
         default:
-            return root.interactionOpen ? root.peekWidth : root.idleWidth;
+            if (root.interactionOpen)
+                return root.peekWidth;
+            return root.handleStyle === "strip" ? root.stripWidth : root.bumpWidth;
         }
     }
 
@@ -58,7 +64,9 @@ Scope {
         case "volume":
             return root.volumeHeight;
         default:
-            return root.interactionOpen ? root.peekHeight : root.idleHeight;
+            if (root.interactionOpen)
+                return root.peekHeight;
+            return root.handleStyle === "strip" ? root.stripHeight : root.bumpHeight;
         }
     }
 
@@ -77,6 +85,15 @@ Scope {
         root.pinnedOpen = false;
         root.title = "Ready";
         root.body = "Waiting for a signal";
+    }
+
+    function setHandleStyle(style) {
+        if (style === "strip" || style === "bump")
+            root.handleStyle = style;
+    }
+
+    function toggleHandleStyle() {
+        root.handleStyle = root.handleStyle === "strip" ? "bump" : "strip";
     }
 
     function showNotification(summary, message, app) {
@@ -150,9 +167,9 @@ Scope {
 
         screen: root.focusedScreen()
         color: "transparent"
-        exclusiveZone: implicitHeight
+        exclusiveZone: root.reservedZone
         exclusionMode: ExclusionMode.Normal
-        implicitHeight: root.targetY() + root.targetHeight()
+        implicitHeight: root.windowHeight
         visible: true
 
         WlrLayershell.namespace: "dynamic-glacier"
@@ -179,6 +196,7 @@ Scope {
                 width: root.targetWidth()
                 height: root.targetHeight()
                 mode: root.mode
+                handleStyle: root.handleStyle
                 forceExpanded: root.interactionOpen
                 appName: root.appName
                 title: root.title
@@ -188,19 +206,25 @@ Scope {
                 muted: root.muted
                 playing: root.playing
                 fontFamily: root.fontFamily
+            }
 
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onEntered: root.pointerInside = true
-                    onExited: root.pointerInside = false
-                    onClicked: {
-                        if (root.mode === "idle")
-                            root.pinnedOpen = !root.pinnedOpen;
-                        else
-                            root.showIdle();
-                    }
+            MouseArea {
+                id: islandHitbox
+
+                z: 20
+                anchors.horizontalCenter: island.horizontalCenter
+                y: island.y
+                width: island.width
+                height: root.mode === "idle" && !root.interactionOpen ? Math.max(root.reservedZone, island.height) : island.height
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onEntered: root.pointerInside = true
+                onExited: root.pointerInside = false
+                onClicked: {
+                    if (root.mode === "idle")
+                        root.pinnedOpen = !root.pinnedOpen;
+                    else
+                        root.showIdle();
                 }
             }
         }
@@ -211,6 +235,14 @@ Scope {
 
         function idle(): void {
             root.showIdle();
+        }
+
+        function handle(style: string): void {
+            root.setHandleStyle(style);
+        }
+
+        function toggleHandle(): void {
+            root.toggleHandleStyle();
         }
 
         function notify(summary: string, message: string, app: string): void {

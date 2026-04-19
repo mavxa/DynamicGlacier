@@ -25,6 +25,7 @@ quickshell ipc --path quickshell call dynamicGlacier demo
 quickshell ipc --path quickshell call dynamicGlacier notify "Build finished" "Dynamic Glacier is alive" "Hello"
 quickshell ipc --path quickshell call dynamicGlacier media "Night Drive" "Glacier FM" true
 quickshell ipc --path quickshell call dynamicGlacier volume 72 false
+quickshell ipc --path quickshell call dynamicGlacier toggleHandle
 quickshell ipc --path quickshell call dynamicGlacier idle
 ```
 
@@ -37,8 +38,10 @@ quickshell ipc --path quickshell call dynamicGlacier demoLoop
 ## Current Scope
 
 - top-center Wayland layer-shell panel
-- Hyprland reserved top zone so tiled windows do not sit underneath the island
+- constant small Hyprland reserved zone for the idle handle
+- hover expansion can overlap windows without pushing them down
 - pure-black OLED-friendly idle bump
+- test switch between `bump` and barely visible `strip` handle
 - sharp top corners and rounded bottom corners
 - hover-to-peek and click-to-pin interaction
 - animated idle, notification, media, and volume states

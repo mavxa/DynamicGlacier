@@ -13,6 +13,7 @@ Item {
     property bool muted: false
     property bool playing: false
     property bool forceExpanded: false
+    property string handleStyle: "bump"
     property string fontFamily: "Noto Sans"
     readonly property color primaryText: "#f7f7f7"
     readonly property color secondaryText: "#7f7f7f"

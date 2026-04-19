@@ -42,7 +42,8 @@ Notifications need special care because only one notification server should own 
 - The primary design principle is minimalism.
 - Idle state should be a small pure-black bump attached to the top-center area.
 - On OLED displays the idle state should look almost invisible until the user hovers, clicks, or an event arrives.
-- The island should reserve top space in Hyprland instead of floating above tiled windows.
+- The island should reserve only a small constant top space in Hyprland for the idle handle.
+- Hover expansion may overlap windows; do not let Hyprland push windows down on every hover.
 - The attached-to-top shape should have sharp top corners and rounded bottom corners.
 - Avoid generic glassmorphism, glow-heavy effects, and decorative color by default.
 - Animate size, radius, content opacity, and progress together.

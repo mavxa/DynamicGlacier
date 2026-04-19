@@ -13,9 +13,11 @@ Item {
     property bool muted: false
     property bool playing: false
     property bool forceExpanded: false
+    property string handleStyle: "bump"
     property string fontFamily: "Noto Sans"
     readonly property bool expanded: mode !== "idle" || forceExpanded
     readonly property real bottomRadius: height / 2
+    readonly property color surfaceColor: !expanded && handleStyle === "strip" ? "#0c0c0c" : "#000000"
 
     transformOrigin: Item.Top
 
@@ -65,14 +67,14 @@ Item {
                 top: parent.top
             }
             height: Math.ceil(parent.height / 2)
-            color: "#000000"
+            color: root.surfaceColor
         }
 
         Rectangle {
             z: 0
             anchors.fill: parent
             radius: root.bottomRadius
-            color: "#000000"
+            color: root.surfaceColor
         }
 
         Rectangle {
@@ -141,6 +143,7 @@ Item {
             anchors.fill: parent
             anchors.margins: root.expanded ? 12 : 0
             mode: root.mode
+            handleStyle: root.handleStyle
             forceExpanded: root.forceExpanded
             appName: root.appName
             title: root.title

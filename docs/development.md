@@ -27,7 +27,9 @@ Quickshell reloads when QML files change, so keep this process open while editin
 Idle behavior:
 
 - the default shape is a small pure-black bump at the top center
-- it reserves top space through layer-shell, so normal Hyprland windows should stay below it
+- it reserves only a small constant top zone through layer-shell
+- hover expansion can overlap windows; this avoids Hyprland pushing windows down on every hover
+- the visible strip can be very thin, but the idle hitbox remains as tall as the reserved zone
 - top corners are sharp because the shape is attached to the screen edge
 - bottom corners are rounded because the visible bump grows downward
 - hover the bump to expand it temporarily
@@ -51,6 +53,9 @@ quickshell ipc --path quickshell call dynamicGlacier demo
 quickshell ipc --path quickshell call dynamicGlacier notify "Build finished" "Dynamic Glacier is alive" "Codex"
 quickshell ipc --path quickshell call dynamicGlacier media "Night Drive" "Glacier FM" true
 quickshell ipc --path quickshell call dynamicGlacier volume 72 false
+quickshell ipc --path quickshell call dynamicGlacier handle bump
+quickshell ipc --path quickshell call dynamicGlacier handle strip
+quickshell ipc --path quickshell call dynamicGlacier toggleHandle
 quickshell ipc --path quickshell call dynamicGlacier idle
 ```
 
@@ -110,7 +115,8 @@ If a change affects runtime behavior, test it with `timeout 5 quickshell --path 
 - Keep state changes centralized in `DynamicGlacier.qml`; services should request mode transitions, not resize the island directly.
 - Keep the visual identity minimal, OLED-friendly, and distinct from Apple's Dynamic Island.
 - Default visuals should be pure black first; add visible decoration only when it materially improves interaction clarity.
-- Keep the island in normal `WlrLayer.Top` with `ExclusionMode.Normal` unless there is a deliberate reason to behave like an overlay.
+- Keep the island in normal `WlrLayer.Top` with `ExclusionMode.Normal`, but keep `exclusiveZone` constant and small.
+- Do not bind `exclusiveZone` to expanded island height; that makes Hyprland push windows down during hover.
 - Keep the attached-top silhouette: sharp top corners, rounded bottom corners.
 
 ## Common Failure Modes
@@ -123,7 +129,13 @@ If a change affects runtime behavior, test it with `timeout 5 quickshell --path 
 
 If the island does not appear but logs say `Configuration Loaded`, check whether it is hidden behind another layer or on the focused monitor. Current placement follows `Hyprland.focusedMonitor` and falls back to the first Quickshell screen.
 
-If tiled windows still go under the island, check `DynamicGlacier.qml` first. The window should use `WlrLayer.Top`, `ExclusionMode.Normal`, and `exclusiveZone: implicitHeight`.
+If tiled windows move too much on hover, check `DynamicGlacier.qml` first. `exclusiveZone` should be `root.reservedZone`, not `implicitHeight`.
+
+If the idle handle is too hard to find, test strip mode:
+
+```sh
+quickshell ipc --path quickshell call dynamicGlacier handle strip
+```
 
 If a gap appears between the island and the top screen edge, check `expandedTopMargin` in `DynamicGlacier.qml`. It should stay `0`; the island should grow downward from the top edge.
 
