@@ -4,6 +4,13 @@ Dynamic Glacier is an experimental QML/Quickshell dynamic-island style widget fo
 
 It is built for people who want a native Linux island surface without Electron, webviews, AGS, EWW, or a JS/HTML/CSS UI stack. The project focuses on a small OLED-friendly black handle that expands only when you hover, click, or when a useful desktop event appears.
 
+## What it looks like
+<img width="1918" height="1198" alt="StringMode" src="https://github.com/user-attachments/assets/85cbe365-7a32-4a27-a0a3-26753ce4d402" />
+<img width="1918" height="1198" alt="PlayerMode" src="https://github.com/user-attachments/assets/725ffa7f-b48d-4ddb-a7af-6c6d70116d77" />
+<img width="1918" height="1198" alt="IdleMode" src="https://github.com/user-attachments/assets/39c9f81f-da28-4fec-a0aa-56d000d055ea" />
+<img width="1918" height="1198" alt="BumpMode" src="https://github.com/user-attachments/assets/ef38c4f9-f4c2-4d46-b6ff-954810451230" />
+
+
 ## end-4 Friendly
 
 Dynamic Glacier is designed to run nicely next to [end-4/dots-hyprland](https://github.com/end-4/dots-hyprland).
