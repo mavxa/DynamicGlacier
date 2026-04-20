@@ -252,16 +252,16 @@ Item {
 
                 ctx.reset();
                 ctx.clearRect(0, 0, width, height);
-                ctx.lineWidth = 1.45;
+                ctx.lineWidth = 2;
                 ctx.lineCap = "round";
                 ctx.lineJoin = "round";
 
-                ctx.strokeStyle = "rgba(170, 170, 170, 0.14)";
+                ctx.strokeStyle = "rgba(190, 190, 190, 0.22)";
                 tracePath(ctx, 1);
                 ctx.stroke();
 
                 if (progress > 0) {
-                    ctx.strokeStyle = "rgba(215, 215, 215, 0.74)";
+                    ctx.strokeStyle = "rgba(245, 245, 245, 0.92)";
                     tracePath(ctx, progress);
                     ctx.stroke();
                 }

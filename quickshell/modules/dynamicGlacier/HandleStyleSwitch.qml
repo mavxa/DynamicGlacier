@@ -14,14 +14,14 @@ RowLayout {
     signal handleStyleRequested(string style)
 
     Layout.fillWidth: true
-    Layout.preferredHeight: root.compact ? 12 : 14
-    spacing: root.compact ? 6 : 7
+    Layout.preferredHeight: root.compact ? 15 : 17
+    spacing: root.compact ? 7 : 8
 
     Text {
         text: "bump"
         color: root.handleStyle === "bump" ? "#d9d9d9" : "#555555"
         font.family: root.fontFamily
-        font.pixelSize: root.compact ? 8 : 9
+        font.pixelSize: root.compact ? 10 : 11
         font.weight: root.handleStyle === "bump" ? Font.DemiBold : Font.Medium
 
         MouseArea {
@@ -37,7 +37,7 @@ RowLayout {
         text: "/"
         color: "#303030"
         font.family: root.fontFamily
-        font.pixelSize: root.compact ? 8 : 9
+        font.pixelSize: root.compact ? 10 : 11
         font.weight: Font.DemiBold
     }
 
@@ -45,7 +45,7 @@ RowLayout {
         text: "strip"
         color: root.handleStyle === "strip" ? "#d9d9d9" : "#555555"
         font.family: root.fontFamily
-        font.pixelSize: root.compact ? 8 : 9
+        font.pixelSize: root.compact ? 10 : 11
         font.weight: root.handleStyle === "strip" ? Font.DemiBold : Font.Medium
 
         MouseArea {
@@ -70,7 +70,7 @@ RowLayout {
             horizontalAlignment: Text.AlignRight
             elide: Text.ElideRight
             font.family: root.fontFamily
-            font.pixelSize: root.compact ? 8 : 9
+            font.pixelSize: root.compact ? 10 : 11
             font.weight: Font.DemiBold
         }
     }
@@ -80,7 +80,7 @@ RowLayout {
         color: "#ececec"
         visible: root.showBattery && root.batteryText !== ""
         font.family: root.fontFamily
-        font.pixelSize: root.compact ? 8 : 9
+        font.pixelSize: root.compact ? 10 : 11
         font.weight: Font.Bold
     }
 }

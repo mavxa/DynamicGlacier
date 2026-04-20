@@ -74,21 +74,22 @@ Item {
         id: collapsedBumpMedia
 
         anchors.fill: parent
-        opacity: root.mode === "idle" && !root.forceExpanded && root.handleStyle === "bump" && root.mediaAvailable ? 1 : 0
+        opacity: root.mode === "idle" && !root.forceExpanded && root.handleStyle === "bump" ? 1 : 0
         visible: opacity > 0
 
         Rectangle {
             id: collapsedCover
 
-            anchors.horizontalCenter: parent.horizontalCenter
-            y: 2
-            width: 12
-            height: 12
-            radius: 4
+            x: 9
+            y: 4
+            width: 14
+            height: 14
+            radius: 5
             color: "#060606"
             border.width: 1
             border.color: "#242424"
             clip: true
+            visible: root.mediaAvailable
 
             Image {
                 id: collapsedCoverSource
@@ -148,12 +149,13 @@ Item {
         }
 
         Rectangle {
-            anchors.horizontalCenter: parent.horizontalCenter
+            x: collapsedCover.x - 1
             y: collapsedCover.y + collapsedCover.height + 1
-            width: 18
+            width: collapsedCover.width + 2
             height: 2
             radius: 1
             color: "#1d1d1d"
+            visible: root.mediaAvailable
 
             Rectangle {
                 anchors.left: parent.left
@@ -170,6 +172,21 @@ Item {
                     }
                 }
             }
+        }
+
+        Text {
+            anchors.left: root.mediaAvailable ? collapsedCover.right : parent.left
+            anchors.leftMargin: root.mediaAvailable ? 9 : 0
+            anchors.right: parent.right
+            anchors.rightMargin: root.mediaAvailable ? 9 : 0
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.timeText
+            color: root.primaryText
+            horizontalAlignment: root.mediaAvailable ? Text.AlignLeft : Text.AlignHCenter
+            elide: Text.ElideRight
+            font.family: root.fontFamily
+            font.pixelSize: 14
+            font.weight: Font.Bold
         }
 
         Behavior on opacity {
@@ -206,14 +223,7 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: 10
-
-                Rectangle {
-                    Layout.preferredWidth: 36
-                    Layout.preferredHeight: 8
-                    radius: height / 2
-                    color: "#151515"
-                }
+                spacing: 0
 
                 ColumnLayout {
                     Layout.fillWidth: true
@@ -225,7 +235,7 @@ Item {
                         color: root.primaryText
                         elide: Text.ElideRight
                         font.family: root.fontFamily
-                        font.pixelSize: 24
+                        font.pixelSize: 28
                         font.weight: Font.Bold
                     }
 
@@ -235,7 +245,7 @@ Item {
                         color: "#b8b8b8"
                         elide: Text.ElideRight
                         font.family: root.fontFamily
-                        font.pixelSize: 11
+                        font.pixelSize: 13
                         font.weight: Font.DemiBold
                     }
                 }
@@ -420,7 +430,7 @@ Item {
                     color: root.primaryText
                     elide: Text.ElideRight
                     font.family: root.fontFamily
-                    font.pixelSize: 14
+                    font.pixelSize: 16
                     font.weight: Font.DemiBold
                 }
 
@@ -429,7 +439,7 @@ Item {
                     color: "#f0f0f0"
                     visible: root.timeText !== ""
                     font.family: root.fontFamily
-                    font.pixelSize: 12
+                    font.pixelSize: 15
                     font.weight: Font.Bold
                 }
             }
@@ -440,7 +450,7 @@ Item {
                 color: root.secondaryText
                 elide: Text.ElideRight
                 font.family: root.fontFamily
-                font.pixelSize: 11
+                font.pixelSize: 13
             }
 
             RowLayout {
@@ -452,7 +462,7 @@ Item {
                     text: root.formatTime(root.mediaPosition)
                     color: "#6d6d6d"
                     font.family: root.fontFamily
-                    font.pixelSize: 8
+                    font.pixelSize: 10
                     font.weight: Font.DemiBold
                 }
 
@@ -502,7 +512,7 @@ Item {
                     text: root.formatTime(root.mediaLength)
                     color: "#6d6d6d"
                     font.family: root.fontFamily
-                    font.pixelSize: 8
+                    font.pixelSize: 10
                     font.weight: Font.DemiBold
                 }
             }

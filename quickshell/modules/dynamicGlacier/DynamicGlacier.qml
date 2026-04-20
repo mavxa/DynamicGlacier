@@ -47,18 +47,18 @@ Scope {
     readonly property string visualMode: root.hoverMediaMode ? "media" : root.mode
     readonly property int idleTopMargin: 0
     readonly property int expandedTopMargin: 0
-    readonly property int reservedZone: root.handleStyle === "strip" ? 0 : 16
-    readonly property int windowHeight: 120
-    readonly property int bumpWidth: 76
-    readonly property int bumpHeight: 18
+    readonly property int reservedZone: root.handleStyle === "strip" ? 0 : 24
+    readonly property int windowHeight: 136
+    readonly property int bumpWidth: 104
+    readonly property int bumpHeight: 24
     readonly property int stripWidth: 98
     readonly property int stripHeight: 4
     readonly property int peekWidth: 340
-    readonly property int peekHeight: 90
+    readonly property int peekHeight: 120
     readonly property int notifyWidth: 438
     readonly property int notifyHeight: 74
     readonly property int mediaWidth: 420
-    readonly property int mediaHeight: 120
+    readonly property int mediaHeight: 132
     readonly property string fontFamily: "Noto Sans"
     readonly property var audioSink: Pipewire.defaultAudioSink
     readonly property bool mediaCanGoPrevious: root.activePlayer?.canGoPrevious ?? false
@@ -565,7 +565,7 @@ Scope {
 
     Timer {
         id: volumeIndicatorTimer
-        interval: 1100
+        interval: 1800
         repeat: false
         onTriggered: root.volumeIndicatorVisible = false
     }
@@ -902,6 +902,10 @@ Scope {
 
         function volume(level: int, isMuted: string): void {
             root.showVolume(level, isMuted === "true" || isMuted === "muted" || isMuted === "1");
+        }
+
+        function brightness(level: int): void {
+            root.showBrightness(level);
         }
 
         function demo(): void {
