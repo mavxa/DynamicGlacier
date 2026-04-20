@@ -6,6 +6,13 @@ It is built for people who want a native Linux island surface without Electron, 
 
 ## What it looks like
 
+<img width="1918" height="1198" alt="privacy" src="https://github.com/user-attachments/assets/fcf5b5ba-191a-44bc-99b0-56d352f4ddce" />
+<img width="1918" height="1198" alt="playerHover" src="https://github.com/user-attachments/assets/e310a109-2ee7-45ce-8a28-3c1b6b02524a" />
+<img width="1918" height="1198" alt="player" src="https://github.com/user-attachments/assets/551736ff-dfba-46b5-952a-58a7ce3fc64c" />
+<img width="1918" height="1198" alt="indleHover" src="https://github.com/user-attachments/assets/815159de-281e-4252-920a-d6d6bd41be0e" />
+<img width="1918" height="1198" alt="idle" src="https://github.com/user-attachments/assets/950bb078-0058-49fd-896d-9f01fe634323" />
+
+
 ## end-4 Friendly
 
 Dynamic Glacier is designed to run nicely next to [end-4/dots-hyprland](https://github.com/end-4/dots-hyprland).
