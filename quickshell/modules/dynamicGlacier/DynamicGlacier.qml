@@ -31,7 +31,7 @@ Scope {
     property bool debugCameraActive: false
     property bool polledMicrophoneActive: false
     property bool polledCameraActive: false
-    property string handleStyle: "bump"
+    property string handleStyle: "strip"
     property var activePlayer: null
     property string lastTrackKey: ""
     property real lastSinkVolume: -1
@@ -45,7 +45,7 @@ Scope {
     readonly property string visualMode: root.hoverMediaMode ? "media" : root.mode
     readonly property int idleTopMargin: 0
     readonly property int expandedTopMargin: 0
-    readonly property int reservedZone: 16
+    readonly property int reservedZone: root.handleStyle === "strip" ? 0 : 16
     readonly property int windowHeight: 120
     readonly property int bumpWidth: 76
     readonly property int bumpHeight: 18

@@ -291,7 +291,7 @@ Item {
                 batteryText: root.batteryHoverText
                 fontFamily: root.fontFamily
                 compact: true
-                showBattery: false
+                showBattery: true
                 onHandleStyleRequested: style => root.handleStyleRequested(style)
             }
 
