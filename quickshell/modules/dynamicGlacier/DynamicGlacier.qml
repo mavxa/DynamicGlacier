@@ -31,13 +31,15 @@ Scope {
     property bool debugCameraActive: false
     property bool polledMicrophoneActive: false
     property bool polledCameraActive: false
-    property string handleStyle: "strip"
+    property date currentDateTime: new Date()
+    property string handleStyle: "bump"
     property var activePlayer: null
     property string lastTrackKey: ""
     property real lastSinkVolume: -1
     property bool lastSinkMuted: false
     property int lastBatteryLevel: -1
     property bool lastBatteryPluggedIn: false
+    property int lastBrightnessLevel: -1
     property int demoStep: 0
 
     readonly property bool interactionOpen: root.mode === "idle" && (root.pointerInside || root.pinnedOpen)
@@ -67,8 +69,12 @@ Scope {
     readonly property bool microphoneActive: root.privacyDebugEnabled ? root.debugMicrophoneActive : root.liveLinksEnabled && (root.detectMicrophoneActivity() || root.polledMicrophoneActive)
     readonly property bool cameraActive: root.privacyDebugEnabled ? root.debugCameraActive : root.liveLinksEnabled && (root.detectVideoActivity() || root.polledCameraActive)
     readonly property bool privacyActive: root.microphoneActive || root.cameraActive
-    readonly property color privacyIndicatorColor: root.privacyActive ? "#35ff72" : "transparent"
+    readonly property color microphoneIndicatorColor: "#ff9f1a"
+    readonly property color cameraIndicatorColor: "#35ff72"
     readonly property string batteryHoverText: root.batteryAvailable() ? (root.batteryPluggedIn() ? "CHG " : "BAT ") + root.batteryLevel() + "%" : ""
+    readonly property string hoverTimeText: root.formatClockTime(root.currentDateTime)
+    readonly property string hoverDateText: root.formatClockDate(root.currentDateTime)
+    readonly property bool mediaAvailable: root.liveLinksEnabled && root.hasActiveMedia()
     readonly property bool mediaCanSeek: (root.activePlayer?.canSeek ?? false) && (root.activePlayer?.positionSupported ?? false) && root.mediaLength > 0
 
     function targetWidth() {
@@ -123,12 +129,36 @@ Scope {
         return value === true || value === "true" || value === "1" || value === "on" || value === "yes";
     }
 
+    function pad2(value) {
+        return value < 10 ? "0" + value : String(value);
+    }
+
+    function formatClockTime(value) {
+        const date = new Date(value);
+
+        return root.pad2(date.getHours()) + ":" + root.pad2(date.getMinutes());
+    }
+
+    function formatClockDate(value) {
+        const date = new Date(value);
+        const shortDays = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+        const day = date.getDay();
+
+        return root.pad2(date.getDate()) + "." + root.pad2(date.getMonth() + 1) + "." + date.getFullYear() + ", " + shortDays[day];
+    }
+
     function showIdle() {
         collapseTimer.stop();
         root.mode = "idle";
         root.pinnedOpen = false;
         root.title = "Ready";
         root.body = "Waiting for a signal";
+
+        if (root.liveLinksEnabled) {
+            root.chooseActivePlayer(null);
+            if (root.hasActiveMedia())
+                root.syncMediaFields(root.activePlayer);
+        }
     }
 
     function setHandleStyle(style) {
@@ -162,6 +192,14 @@ Scope {
         root.volume = Math.max(0, Math.min(100, Number(level)));
         root.muted = isMuted;
         root.title = root.muted ? "Muted" : "Volume";
+        root.volumeIndicatorVisible = true;
+        volumeIndicatorTimer.restart();
+    }
+
+    function showBrightness(level) {
+        root.volume = Math.max(0, Math.min(100, Number(level)));
+        root.muted = false;
+        root.title = "Brightness";
         root.volumeIndicatorVisible = true;
         volumeIndicatorTimer.restart();
     }
@@ -266,7 +304,9 @@ Scope {
         if (!player || !key)
             return;
 
-        if (root.hoverMediaMode)
+        const keepMediaFieldsFresh = root.mode === "idle" || root.hoverMediaMode;
+
+        if (keepMediaFieldsFresh)
             root.syncMediaFields(player);
 
         if (!root.liveLinksPrimed) {
@@ -276,7 +316,7 @@ Scope {
 
         if (force || key !== root.lastTrackKey) {
             root.lastTrackKey = key;
-            if (root.hoverMediaMode)
+            if (keepMediaFieldsFresh)
                 root.syncMediaFields(player);
         }
     }
@@ -348,6 +388,25 @@ Scope {
 
         root.polledMicrophoneActive = parts[0] === "1";
         root.polledCameraActive = parts[1] === "1";
+    }
+
+    function updatePolledBrightness(text) {
+        const rawLevel = Number(text.trim());
+
+        if (!isFinite(rawLevel) || rawLevel < 0)
+            return;
+
+        const nextLevel = Math.max(0, Math.min(100, Math.round(rawLevel)));
+
+        if (root.lastBrightnessLevel < 0) {
+            root.lastBrightnessLevel = nextLevel;
+            return;
+        }
+
+        if (nextLevel !== root.lastBrightnessLevel) {
+            root.lastBrightnessLevel = nextLevel;
+            root.showBrightness(nextLevel);
+        }
     }
 
     function detectVideoActivity() {
@@ -514,6 +573,14 @@ Scope {
     Timer {
         interval: 1000
         repeat: true
+        running: true
+        triggeredOnStart: true
+        onTriggered: root.currentDateTime = new Date()
+    }
+
+    Timer {
+        interval: 1000
+        repeat: true
         running: root.visualMode === "media" && root.activePlayer !== null
         onTriggered: {
             if (root.activePlayer)
@@ -541,11 +608,30 @@ Scope {
         }
     }
 
+    Timer {
+        interval: 700
+        repeat: true
+        running: root.liveLinksEnabled
+        triggeredOnStart: true
+        onTriggered: {
+            if (!brightnessPollProc.running)
+                brightnessPollProc.exec(["sh", "-c", "level=-1; for dev in /sys/class/backlight/*; do [ -r \"$dev/brightness\" ] && [ -r \"$dev/max_brightness\" ] || continue; b=$(cat \"$dev/brightness\" 2>/dev/null); m=$(cat \"$dev/max_brightness\" 2>/dev/null); [ \"$m\" -gt 0 ] 2>/dev/null || continue; level=$(( (b * 100 + m / 2) / m )); break; done; printf '%s\\n' \"$level\""]);
+        }
+    }
+
     Process {
         id: privacyPollProc
 
         stdout: StdioCollector {
             onStreamFinished: root.updatePolledPrivacy(text)
+        }
+    }
+
+    Process {
+        id: brightnessPollProc
+
+        stdout: StdioCollector {
+            onStreamFinished: root.updatePolledBrightness(text)
         }
     }
 
@@ -629,12 +715,12 @@ Scope {
                 readonly property bool privacyVisible: root.privacyActive && !root.interactionOpen
                 readonly property real islandRightEdge: island.x + island.width
                 readonly property real islandBottomEdge: island.y + island.height
-                readonly property real privacyRightEdge: privacyVisible ? privacyIndicator.x + privacyIndicator.width : islandRightEdge
-                readonly property real privacyBottomEdge: privacyVisible ? privacyIndicator.y + privacyIndicator.height : islandBottomEdge
+                readonly property real privacyRightEdge: privacyVisible ? privacyIndicators.x + privacyIndicators.width : islandRightEdge
+                readonly property real privacyBottomEdge: privacyVisible ? privacyIndicators.y + privacyIndicators.height : islandBottomEdge
                 readonly property real rightEdge: Math.max(islandRightEdge, privacyRightEdge)
                 readonly property real bottomEdge: Math.max(islandBottomEdge, privacyBottomEdge)
 
-                x: Math.max(0, Math.min(island.x, privacyVisible ? privacyIndicator.x : island.x) - maskPadding)
+                x: Math.max(0, Math.min(island.x, privacyVisible ? privacyIndicators.x : island.x) - maskPadding)
                 y: Math.max(0, island.y - maskPadding)
                 width: Math.min(parent.width - x, rightEdge - x + maskPadding)
                 height: Math.min(parent.height - y, bottomEdge - y + maskPadding)
@@ -665,8 +751,11 @@ Scope {
                 canSeek: root.mediaCanSeek
                 mediaPosition: root.mediaPosition
                 mediaLength: root.mediaLength
+                mediaAvailable: root.mediaAvailable
                 fontFamily: root.fontFamily
                 batteryHoverText: root.batteryHoverText
+                timeText: root.hoverTimeText
+                dateText: root.hoverDateText
                 onPreviousRequested: root.mediaPrevious()
                 onPlayPauseRequested: root.mediaTogglePlaying()
                 onNextRequested: root.mediaNext()
@@ -675,34 +764,70 @@ Scope {
             }
 
             Item {
-                id: privacyIndicator
+                id: privacyIndicators
 
                 z: 35
                 x: island.x + island.width + 8
                 y: island.y + Math.max(2, island.height / 2 - height / 2)
-                width: 16
+                width: (root.microphoneActive ? 16 : 0) + (root.cameraActive ? 16 : 0) + (root.microphoneActive && root.cameraActive ? 5 : 0)
                 height: 16
                 opacity: visible ? 1 : 0
                 visible: root.privacyActive && !root.interactionOpen
                 transformOrigin: Item.Center
 
-                Rectangle {
+                Row {
                     anchors.centerIn: parent
-                    width: 16
-                    height: 16
-                    radius: 8
-                    color: root.privacyIndicatorColor
-                    opacity: 0.18
-                }
+                    spacing: 5
 
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: 9
-                    height: 9
-                    radius: 5
-                    color: root.privacyIndicatorColor
-                    border.width: 1
-                    border.color: "#000000"
+                    Item {
+                        width: root.microphoneActive ? 16 : 0
+                        height: 16
+                        visible: root.microphoneActive
+
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 16
+                            height: 16
+                            radius: 8
+                            color: root.microphoneIndicatorColor
+                            opacity: 0.2
+                        }
+
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 9
+                            height: 9
+                            radius: 5
+                            color: root.microphoneIndicatorColor
+                            border.width: 1
+                            border.color: "#000000"
+                        }
+                    }
+
+                    Item {
+                        width: root.cameraActive ? 16 : 0
+                        height: 16
+                        visible: root.cameraActive
+
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 16
+                            height: 16
+                            radius: 8
+                            color: root.cameraIndicatorColor
+                            opacity: 0.18
+                        }
+
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 9
+                            height: 9
+                            radius: 5
+                            color: root.cameraIndicatorColor
+                            border.width: 1
+                            border.color: "#000000"
+                        }
+                    }
                 }
 
                 Behavior on opacity {

@@ -21,8 +21,11 @@ Item {
     property real mediaPosition: 0
     property real mediaLength: 0
     property bool forceExpanded: false
+    property bool mediaAvailable: false
     property string handleStyle: "bump"
     property string batteryHoverText: ""
+    property string timeText: ""
+    property string dateText: ""
     property string fontFamily: "Noto Sans"
     readonly property color primaryText: "#f7f7f7"
     readonly property color secondaryText: "#7f7f7f"
@@ -68,6 +71,116 @@ Item {
     }
 
     Item {
+        id: collapsedBumpMedia
+
+        anchors.fill: parent
+        opacity: root.mode === "idle" && !root.forceExpanded && root.handleStyle === "bump" && root.mediaAvailable ? 1 : 0
+        visible: opacity > 0
+
+        Rectangle {
+            id: collapsedCover
+
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: 2
+            width: 12
+            height: 12
+            radius: 4
+            color: "#060606"
+            border.width: 1
+            border.color: "#242424"
+            clip: true
+
+            Image {
+                id: collapsedCoverSource
+
+                anchors.fill: parent
+                source: root.artUrl
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+                visible: false
+            }
+
+            OpacityMask {
+                anchors.fill: parent
+                source: collapsedCoverSource
+                visible: root.artUrl !== "" && collapsedCoverSource.status === Image.Ready
+
+                maskSource: Rectangle {
+                    width: collapsedCover.width
+                    height: collapsedCover.height
+                    radius: collapsedCover.radius
+                }
+            }
+
+            Row {
+                anchors.centerIn: parent
+                spacing: 1
+                visible: root.artUrl === "" || collapsedCoverSource.status !== Image.Ready
+
+                Repeater {
+                    model: 3
+
+                    Rectangle {
+                        width: 2
+                        height: root.playing ? (5 + index * 2) : 4
+                        radius: 1
+                        color: root.playing ? "#f1f1f1" : "#666666"
+
+                        SequentialAnimation on height {
+                            running: collapsedBumpMedia.visible && root.playing
+                            loops: Animation.Infinite
+
+                            NumberAnimation {
+                                to: 4 + index
+                                duration: 280 + index * 70
+                                easing.type: Easing.InOutSine
+                            }
+
+                            NumberAnimation {
+                                to: 8 - index
+                                duration: 320 + index * 70
+                                easing.type: Easing.InOutSine
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            anchors.horizontalCenter: parent.horizontalCenter
+            y: collapsedCover.y + collapsedCover.height + 1
+            width: 18
+            height: 2
+            radius: 1
+            color: "#1d1d1d"
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                width: root.playing ? parent.width : 6
+                height: parent.height
+                radius: parent.radius
+                color: root.playing ? "#f2f2f2" : "#5f5f5f"
+
+                Behavior on width {
+                    NumberAnimation {
+                        duration: 180
+                        easing.type: Easing.OutCubic
+                    }
+                }
+            }
+        }
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: 160
+                easing.type: Easing.OutCubic
+            }
+        }
+    }
+
+    Item {
         id: idleContent
 
         anchors.fill: parent
@@ -108,21 +221,22 @@ Item {
 
                     Text {
                         Layout.fillWidth: true
-                        text: "Dynamic Glacier"
+                        text: root.timeText
                         color: root.primaryText
                         elide: Text.ElideRight
                         font.family: root.fontFamily
-                        font.pixelSize: 12
-                        font.weight: Font.DemiBold
+                        font.pixelSize: 24
+                        font.weight: Font.Bold
                     }
 
                     Text {
                         Layout.fillWidth: true
-                        text: "minimal island"
-                        color: root.secondaryText
+                        text: root.dateText
+                        color: "#b8b8b8"
                         elide: Text.ElideRight
                         font.family: root.fontFamily
-                        font.pixelSize: 9
+                        font.pixelSize: 11
+                        font.weight: Font.DemiBold
                     }
                 }
             }
@@ -289,20 +403,35 @@ Item {
             HandleStyleSwitch {
                 handleStyle: root.handleStyle
                 batteryText: root.batteryHoverText
+                statusText: root.dateText
                 fontFamily: root.fontFamily
                 compact: true
                 showBattery: true
                 onHandleStyleRequested: style => root.handleStyleRequested(style)
             }
 
-            Text {
+            RowLayout {
                 Layout.fillWidth: true
-                text: root.title
-                color: root.primaryText
-                elide: Text.ElideRight
-                font.family: root.fontFamily
-                font.pixelSize: 14
-                font.weight: Font.DemiBold
+                spacing: 8
+
+                Text {
+                    Layout.fillWidth: true
+                    text: root.title
+                    color: root.primaryText
+                    elide: Text.ElideRight
+                    font.family: root.fontFamily
+                    font.pixelSize: 14
+                    font.weight: Font.DemiBold
+                }
+
+                Text {
+                    text: root.timeText
+                    color: "#f0f0f0"
+                    visible: root.timeText !== ""
+                    font.family: root.fontFamily
+                    font.pixelSize: 12
+                    font.weight: Font.Bold
+                }
             }
 
             Text {

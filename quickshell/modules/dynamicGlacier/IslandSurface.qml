@@ -21,8 +21,11 @@ Item {
     property real mediaPosition: 0
     property real mediaLength: 0
     property bool forceExpanded: false
+    property bool mediaAvailable: false
     property string handleStyle: "bump"
     property string batteryHoverText: ""
+    property string timeText: ""
+    property string dateText: ""
     property string fontFamily: "Noto Sans"
     readonly property bool expanded: mode !== "idle" || forceExpanded
     readonly property real bottomRadius: Math.max(1, Math.min(height / 2, expanded ? Math.min(height * 0.28, 24) : Math.min(height * 0.42, 8)))
@@ -312,8 +315,11 @@ Item {
             canSeek: root.canSeek
             mediaPosition: root.mediaPosition
             mediaLength: root.mediaLength
+            mediaAvailable: root.mediaAvailable
             fontFamily: root.fontFamily
             batteryHoverText: root.batteryHoverText
+            timeText: root.timeText
+            dateText: root.dateText
             onPreviousRequested: root.previousRequested()
             onPlayPauseRequested: root.playPauseRequested()
             onNextRequested: root.nextRequested()
