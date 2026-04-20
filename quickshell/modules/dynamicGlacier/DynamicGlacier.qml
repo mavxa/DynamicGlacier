@@ -26,6 +26,11 @@ Scope {
     property bool pinnedOpen: false
     property bool liveLinksEnabled: true
     property bool liveLinksPrimed: false
+    property bool privacyDebugEnabled: false
+    property bool debugMicrophoneActive: false
+    property bool debugCameraActive: false
+    property bool polledMicrophoneActive: false
+    property bool polledCameraActive: false
     property string handleStyle: "bump"
     property var activePlayer: null
     property string lastTrackKey: ""
@@ -43,11 +48,11 @@ Scope {
     readonly property int reservedZone: 16
     readonly property int windowHeight: 120
     readonly property int bumpWidth: 76
-    readonly property int bumpHeight: 16
-    readonly property int stripWidth: 168
+    readonly property int bumpHeight: 18
+    readonly property int stripWidth: 98
     readonly property int stripHeight: 4
-    readonly property int peekWidth: 292
-    readonly property int peekHeight: 48
+    readonly property int peekWidth: 340
+    readonly property int peekHeight: 90
     readonly property int notifyWidth: 438
     readonly property int notifyHeight: 74
     readonly property int mediaWidth: 420
@@ -59,6 +64,12 @@ Scope {
     readonly property bool mediaCanGoNext: root.activePlayer?.canGoNext ?? false
     readonly property real mediaPosition: Math.max(0, root.activePlayer?.position ?? 0)
     readonly property real mediaLength: Math.max(0, root.activePlayer?.length ?? 0)
+    readonly property bool microphoneActive: root.privacyDebugEnabled ? root.debugMicrophoneActive : root.liveLinksEnabled && (root.detectMicrophoneActivity() || root.polledMicrophoneActive)
+    readonly property bool cameraActive: root.privacyDebugEnabled ? root.debugCameraActive : root.liveLinksEnabled && (root.detectVideoActivity() || root.polledCameraActive)
+    readonly property bool privacyActive: root.microphoneActive || root.cameraActive
+    readonly property color privacyIndicatorColor: root.privacyActive ? "#35ff72" : "transparent"
+    readonly property string batteryHoverText: root.batteryAvailable() ? (root.batteryPluggedIn() ? "CHG " : "BAT ") + root.batteryLevel() + "%" : ""
+    readonly property bool mediaCanSeek: (root.activePlayer?.canSeek ?? false) && (root.activePlayer?.positionSupported ?? false) && root.mediaLength > 0
 
     function targetWidth() {
         switch (root.visualMode) {
@@ -93,6 +104,19 @@ Scope {
     function hold(milliseconds) {
         collapseTimer.interval = milliseconds;
         collapseTimer.restart();
+    }
+
+    function keepInteractionOpen(prepareMedia) {
+        hoverLeaveTimer.stop();
+        root.pointerInside = true;
+
+        if (prepareMedia)
+            root.prepareHoverMedia();
+    }
+
+    function scheduleInteractionClose() {
+        if (!root.pinnedOpen)
+            hoverLeaveTimer.restart();
     }
 
     function boolFromIpc(value) {
@@ -252,8 +276,18 @@ Scope {
 
         if (force || key !== root.lastTrackKey) {
             root.lastTrackKey = key;
-            root.showMedia(root.trackTitle(player), root.trackArtist(player), player.isPlaying, root.trackArtUrl(player));
+            if (root.hoverMediaMode)
+                root.syncMediaFields(player);
         }
+    }
+
+    function mediaSeek(position) {
+        const player = root.activePlayer;
+
+        if (!player || !root.mediaCanSeek)
+            return;
+
+        player.position = Math.max(0, Math.min(root.mediaLength, Number(position)));
     }
 
     function sinkVolumePercent() {
@@ -263,6 +297,87 @@ Scope {
 
     function sinkMuted() {
         return root.audioSink?.audio?.muted ?? false;
+    }
+
+    function pipewireLinkGroups() {
+        return Pipewire.linkGroups?.values ?? [];
+    }
+
+    function nodeHasType(node, type) {
+        return node && node.type !== undefined && (node.type === type || (node.type & type) === type);
+    }
+
+    function nodePropertyText(node) {
+        const properties = node?.properties ?? {};
+
+        return [properties["media.class"] ?? "", properties["node.name"] ?? "", properties["node.description"] ?? "", properties["node.nick"] ?? "", properties["application.name"] ?? "", node?.name ?? "", node?.description ?? "", node?.nickname ?? ""].join(" ").toLowerCase();
+    }
+
+    function textHasAny(text, needles) {
+        for (let i = 0; i < needles.length; i += 1) {
+            if (text.indexOf(needles[i]) !== -1)
+                return true;
+        }
+
+        return false;
+    }
+
+    function nodeLooksLikeVideoSource(node) {
+        const text = root.nodePropertyText(node);
+
+        return root.nodeHasType(node, PwNodeType.VideoSource) || (root.nodeHasType(node, PwNodeType.Video) && root.nodeHasType(node, PwNodeType.Source)) || text.indexOf("video/source") !== -1 || text.indexOf("video source") !== -1 || text.indexOf("v4l2") !== -1 || text.indexOf("camera") !== -1;
+    }
+
+    function nodeLooksLikeMicrophoneSource(node) {
+        const text = root.nodePropertyText(node);
+
+        return root.nodeHasType(node, PwNodeType.AudioSource) || (root.nodeHasType(node, PwNodeType.Audio) && root.nodeHasType(node, PwNodeType.Source)) || text.indexOf("audio/source") !== -1 || text.indexOf("audio source") !== -1 || text.indexOf("alsa_input") !== -1 || root.textHasAny(text, ["microphone", "mic", "input"]);
+    }
+
+    function nodeLooksLikeAudioInputStream(node) {
+        const text = root.nodePropertyText(node);
+
+        return root.nodeHasType(node, PwNodeType.AudioInStream) || (root.nodeHasType(node, PwNodeType.Audio) && root.nodeHasType(node, PwNodeType.Stream)) || text.indexOf("stream/input/audio") !== -1 || text.indexOf("audio/input") !== -1 || text.indexOf("input audio") !== -1 || text.indexOf("source-output") !== -1 || text.indexOf("capture") !== -1;
+    }
+
+    function updatePolledPrivacy(text) {
+        const parts = text.trim().split(/\s+/);
+
+        if (parts.length < 2)
+            return;
+
+        root.polledMicrophoneActive = parts[0] === "1";
+        root.polledCameraActive = parts[1] === "1";
+    }
+
+    function detectVideoActivity() {
+        const groups = root.pipewireLinkGroups();
+
+        for (let i = 0; i < groups.length; i += 1) {
+            const group = groups[i];
+
+            if (root.nodeLooksLikeVideoSource(group?.source) || root.nodeLooksLikeVideoSource(group?.target))
+                return true;
+        }
+
+        return false;
+    }
+
+    function detectMicrophoneActivity() {
+        const groups = root.pipewireLinkGroups();
+
+        for (let i = 0; i < groups.length; i += 1) {
+            const group = groups[i];
+            const sourceIsMic = root.nodeLooksLikeMicrophoneSource(group?.source);
+            const targetIsMic = root.nodeLooksLikeMicrophoneSource(group?.target);
+            const sourceIsStream = root.nodeLooksLikeAudioInputStream(group?.source);
+            const targetIsStream = root.nodeLooksLikeAudioInputStream(group?.target);
+
+            if ((sourceIsMic && (targetIsStream || !targetIsMic)) || (targetIsMic && (sourceIsStream || !sourceIsMic)))
+                return true;
+        }
+
+        return false;
     }
 
     function maybeShowVolumeFromSink() {
@@ -375,6 +490,13 @@ Scope {
     }
 
     Timer {
+        id: hoverLeaveTimer
+        interval: 140
+        repeat: false
+        onTriggered: root.pointerInside = false
+    }
+
+    Timer {
         id: demoLoopTimer
         interval: 2600
         repeat: true
@@ -406,6 +528,25 @@ Scope {
         repeat: false
         running: true
         onTriggered: root.primeLiveLinks()
+    }
+
+    Timer {
+        interval: 1200
+        repeat: true
+        running: root.liveLinksEnabled && !root.privacyDebugEnabled
+        triggeredOnStart: true
+        onTriggered: {
+            if (!privacyPollProc.running)
+                privacyPollProc.exec(["sh", "-c", "mic=0; cam=0; if command -v pactl >/dev/null 2>&1; then [ -n \"$(pactl list source-outputs short 2>/dev/null)\" ] && mic=1; fi; if command -v fuser >/dev/null 2>&1; then for dev in /dev/video*; do [ -e \"$dev\" ] || continue; fuser \"$dev\" >/dev/null 2>&1 && cam=1; done; fi; printf '%s %s\\n' \"$mic\" \"$cam\""]);
+        }
+    }
+
+    Process {
+        id: privacyPollProc
+
+        stdout: StdioCollector {
+            onStreamFinished: root.updatePolledPrivacy(text)
+        }
     }
 
     PwObjectTracker {
@@ -475,11 +616,29 @@ Scope {
         }
 
         mask: Region {
-            item: island
+            item: interactionMask
         }
 
         Item {
             anchors.fill: parent
+
+            Item {
+                id: interactionMask
+
+                readonly property real maskPadding: 8
+                readonly property bool privacyVisible: root.privacyActive && !root.interactionOpen
+                readonly property real islandRightEdge: island.x + island.width
+                readonly property real islandBottomEdge: island.y + island.height
+                readonly property real privacyRightEdge: privacyVisible ? privacyIndicator.x + privacyIndicator.width : islandRightEdge
+                readonly property real privacyBottomEdge: privacyVisible ? privacyIndicator.y + privacyIndicator.height : islandBottomEdge
+                readonly property real rightEdge: Math.max(islandRightEdge, privacyRightEdge)
+                readonly property real bottomEdge: Math.max(islandBottomEdge, privacyBottomEdge)
+
+                x: Math.max(0, Math.min(island.x, privacyVisible ? privacyIndicator.x : island.x) - maskPadding)
+                y: Math.max(0, island.y - maskPadding)
+                width: Math.min(parent.width - x, rightEdge - x + maskPadding)
+                height: Math.min(parent.height - y, bottomEdge - y + maskPadding)
+            }
 
             IslandSurface {
                 id: island
@@ -503,12 +662,55 @@ Scope {
                 canGoPrevious: root.mediaCanGoPrevious
                 canTogglePlaying: root.mediaCanTogglePlaying
                 canGoNext: root.mediaCanGoNext
+                canSeek: root.mediaCanSeek
                 mediaPosition: root.mediaPosition
                 mediaLength: root.mediaLength
                 fontFamily: root.fontFamily
+                batteryHoverText: root.batteryHoverText
                 onPreviousRequested: root.mediaPrevious()
                 onPlayPauseRequested: root.mediaTogglePlaying()
                 onNextRequested: root.mediaNext()
+                onSeekRequested: position => root.mediaSeek(position)
+                onHandleStyleRequested: style => root.setHandleStyle(style)
+            }
+
+            Item {
+                id: privacyIndicator
+
+                z: 35
+                x: island.x + island.width + 8
+                y: island.y + Math.max(2, island.height / 2 - height / 2)
+                width: 16
+                height: 16
+                opacity: visible ? 1 : 0
+                visible: root.privacyActive && !root.interactionOpen
+                transformOrigin: Item.Center
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 16
+                    height: 16
+                    radius: 8
+                    color: root.privacyIndicatorColor
+                    opacity: 0.18
+                }
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 9
+                    height: 9
+                    radius: 5
+                    color: root.privacyIndicatorColor
+                    border.width: 1
+                    border.color: "#000000"
+                }
+
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: 160
+                        easing.type: Easing.OutCubic
+                    }
+                }
             }
 
             MouseArea {
@@ -520,13 +722,10 @@ Scope {
                 width: island.width
                 height: root.mode === "idle" && !root.interactionOpen ? Math.max(root.reservedZone, island.height) : island.height
                 hoverEnabled: true
-                acceptedButtons: root.visualMode === "media" ? Qt.NoButton : Qt.LeftButton
+                acceptedButtons: root.visualMode === "media" || root.interactionOpen ? Qt.NoButton : Qt.LeftButton
                 cursorShape: Qt.PointingHandCursor
-                onEntered: {
-                    root.pointerInside = true;
-                    root.prepareHoverMedia();
-                }
-                onExited: root.pointerInside = false
+                onEntered: root.keepInteractionOpen(true)
+                onExited: root.scheduleInteractionClose()
                 onClicked: {
                     if (root.mode === "idle")
                         root.pinnedOpen = !root.pinnedOpen;
@@ -554,6 +753,18 @@ Scope {
 
         function live(enabled: string): void {
             root.liveLinksEnabled = root.boolFromIpc(enabled);
+        }
+
+        function privacy(micActive: string, cameraActive: string): void {
+            root.privacyDebugEnabled = true;
+            root.debugMicrophoneActive = root.boolFromIpc(micActive);
+            root.debugCameraActive = root.boolFromIpc(cameraActive);
+        }
+
+        function privacyLive(): void {
+            root.privacyDebugEnabled = false;
+            root.debugMicrophoneActive = false;
+            root.debugCameraActive = false;
         }
 
         function notify(summary: string, message: string, app: string): void {

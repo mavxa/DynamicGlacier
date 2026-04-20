@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import Qt5Compat.GraphicalEffects
 
 Item {
     id: root
@@ -16,20 +17,26 @@ Item {
     property bool canGoPrevious: false
     property bool canTogglePlaying: false
     property bool canGoNext: false
+    property bool canSeek: false
     property real mediaPosition: 0
     property real mediaLength: 0
     property bool forceExpanded: false
     property string handleStyle: "bump"
+    property string batteryHoverText: ""
     property string fontFamily: "Noto Sans"
     readonly property color primaryText: "#f7f7f7"
     readonly property color secondaryText: "#7f7f7f"
     readonly property color accent: "#ffffff"
     readonly property int mediaHorizontalPadding: 24
-    readonly property real mediaProgress: mediaLength > 0 ? Math.max(0, Math.min(1, mediaPosition / mediaLength)) : 0
+    readonly property real normalizedMediaPosition: root.normalizedSeconds(mediaPosition)
+    readonly property real normalizedMediaLength: root.normalizedSeconds(mediaLength)
+    readonly property real mediaProgress: normalizedMediaLength > 0 ? Math.max(0, Math.min(1, normalizedMediaPosition / normalizedMediaLength)) : 0
 
     signal previousRequested
     signal playPauseRequested
     signal nextRequested
+    signal seekRequested(real position)
+    signal handleStyleRequested(string style)
 
     function normalizedSeconds(value) {
         if (!isFinite(value) || value <= 0)
@@ -67,39 +74,56 @@ Item {
         opacity: root.mode === "idle" && root.forceExpanded ? 1 : 0
         visible: opacity > 0
 
-        RowLayout {
-            anchors.centerIn: parent
-            width: parent.width - 24
-            spacing: 10
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 16
+            anchors.rightMargin: 16
+            anchors.topMargin: 6
+            anchors.bottomMargin: 7
+            spacing: 2
 
-            Rectangle {
-                Layout.preferredWidth: 36
-                Layout.preferredHeight: 8
-                radius: height / 2
-                color: "#151515"
+            HandleStyleSwitch {
+                handleStyle: root.handleStyle
+                batteryText: root.batteryHoverText
+                fontFamily: root.fontFamily
+                showBattery: true
+                onHandleStyleRequested: style => root.handleStyleRequested(style)
             }
 
-            ColumnLayout {
+            RowLayout {
                 Layout.fillWidth: true
-                spacing: 0
+                Layout.fillHeight: true
+                spacing: 10
 
-                Text {
-                    Layout.fillWidth: true
-                    text: "Dynamic Glacier"
-                    color: root.primaryText
-                    elide: Text.ElideRight
-                    font.family: root.fontFamily
-                    font.pixelSize: 13
-                    font.weight: Font.DemiBold
+                Rectangle {
+                    Layout.preferredWidth: 36
+                    Layout.preferredHeight: 8
+                    radius: height / 2
+                    color: "#151515"
                 }
 
-                Text {
+                ColumnLayout {
                     Layout.fillWidth: true
-                    text: "minimal island"
-                    color: root.secondaryText
-                    elide: Text.ElideRight
-                    font.family: root.fontFamily
-                    font.pixelSize: 10
+                    spacing: 0
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Dynamic Glacier"
+                        color: root.primaryText
+                        elide: Text.ElideRight
+                        font.family: root.fontFamily
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "minimal island"
+                        color: root.secondaryText
+                        elide: Text.ElideRight
+                        font.family: root.fontFamily
+                        font.pixelSize: 9
+                    }
                 }
             }
         }
@@ -201,19 +225,31 @@ Item {
             clip: true
 
             Image {
-                id: mediaCover
+                id: mediaCoverSource
 
                 anchors.fill: parent
                 source: root.artUrl
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
-                visible: root.artUrl !== "" && status === Image.Ready
+                visible: false
+            }
+
+            OpacityMask {
+                anchors.fill: parent
+                source: mediaCoverSource
+                visible: root.artUrl !== "" && mediaCoverSource.status === Image.Ready
+
+                maskSource: Rectangle {
+                    width: mediaArtwork.width
+                    height: mediaArtwork.height
+                    radius: mediaArtwork.radius
+                }
             }
 
             Row {
                 anchors.centerIn: parent
                 spacing: 3
-                visible: root.artUrl === "" || mediaCover.status !== Image.Ready
+                visible: root.artUrl === "" || mediaCoverSource.status !== Image.Ready
 
                 Repeater {
                     model: 3
@@ -250,6 +286,15 @@ Item {
             Layout.fillWidth: true
             spacing: 2
 
+            HandleStyleSwitch {
+                handleStyle: root.handleStyle
+                batteryText: root.batteryHoverText
+                fontFamily: root.fontFamily
+                compact: true
+                showBattery: false
+                onHandleStyleRequested: style => root.handleStyleRequested(style)
+            }
+
             Text {
                 Layout.fillWidth: true
                 text: root.title
@@ -283,6 +328,8 @@ Item {
                 }
 
                 Rectangle {
+                    id: mediaProgressTrack
+
                     Layout.fillWidth: true
                     Layout.preferredHeight: 3
                     radius: height / 2
@@ -299,6 +346,25 @@ Item {
                                 duration: 260
                                 easing.type: Easing.OutCubic
                             }
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -5
+                        enabled: root.canSeek
+                        hoverEnabled: true
+                        cursorShape: root.canSeek ? Qt.PointingHandCursor : Qt.ArrowCursor
+
+                        function seekToX(x) {
+                            const progress = Math.max(0, Math.min(1, x / Math.max(1, mediaProgressTrack.width)));
+                            root.seekRequested(root.mediaLength * progress);
+                        }
+
+                        onPressed: event => seekToX(event.x)
+                        onPositionChanged: event => {
+                            if (pressed)
+                                seekToX(event.x);
                         }
                     }
                 }

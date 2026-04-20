@@ -53,6 +53,8 @@ quickshell ipc --path quickshell call dynamicGlacier demoLoop
 - hover media player with artwork, timeline, and previous/play-pause/next controls
 - live PipeWire volume link
 - live UPower battery event link
+- hover battery text
+- microphone/camera privacy dot through PipeWire plus small local fallbacks
 - focused-monitor placement under Hyprland
 - transparent click mask around the island
 - IPC functions for manual testing
@@ -64,7 +66,6 @@ Developer workflow and test commands are in [`docs/development.md`](docs/develop
 ## Next Milestones
 
 - add a clean config surface for size, colors, timing, and monitor behavior
-- add privacy indicators for microphone and screen sharing
 - decide how to integrate notifications without fighting the end-4 notification service
 - design notification bridge/integration for end-4
 - document end-4 installation options

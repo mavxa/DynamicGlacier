@@ -31,8 +31,11 @@ Idle behavior:
 - hover expansion can overlap windows; this avoids Hyprland pushing windows down on every hover
 - the visible strip can be very thin, but the idle hitbox remains as tall as the reserved zone
 - top corners are sharp where the shape touches the screen edge
-- bottom corners are rounded because the visible bump grows downward
+- bottom corners use a capped adaptive radius; avoid `height / 2` on large media layouts because it makes the island and volume trace too round
+- collapsed idle corners are slightly softer than before, but the handle must still read as a top-attached glacier, not a pill
 - hover the bump to expand it temporarily
+- hover shows a tiny text-style bump/strip switch inside the idle island content; the same styles are also available through IPC
+- hover shows battery charge in the menu when UPower exposes a laptop display battery
 - if a MPRIS player has active media, hovering the bump shows a compact media player instead of the generic idle peek
 - click the bump to pin or unpin the expanded idle state
 - click while a non-media event state is visible to collapse back to idle
@@ -51,16 +54,21 @@ Manual state triggers:
 
 ```sh
 quickshell ipc --path quickshell call dynamicGlacier demo
-quickshell ipc --path quickshell call dynamicGlacier notify "Build finished" "Dynamic Glacier is alive" "Codex"
+quickshell ipc --path quickshell call dynamicGlacier notify "Build finished" "Dynamic Glacier is alive" "Hello"
 quickshell ipc --path quickshell call dynamicGlacier media "Night Drive" "Glacier FM" true ""
 quickshell ipc --path quickshell call dynamicGlacier volume 72 false
 quickshell ipc --path quickshell call dynamicGlacier handle bump
 quickshell ipc --path quickshell call dynamicGlacier handle strip
 quickshell ipc --path quickshell call dynamicGlacier toggleHandle
+quickshell ipc --path quickshell call dynamicGlacier privacy true false
+quickshell ipc --path quickshell call dynamicGlacier privacy false true
+quickshell ipc --path quickshell call dynamicGlacier privacyLive
 quickshell ipc --path quickshell call dynamicGlacier live true
 quickshell ipc --path quickshell call dynamicGlacier live false
 quickshell ipc --path quickshell call dynamicGlacier idle
 ```
+
+`privacy true false` forces the green microphone dot. `privacy false true` forces the green camera dot. `privacyLive` clears the override and returns to real PipeWire/fallback detection.
 
 Looping demo:
 
@@ -115,18 +123,38 @@ Dynamic Glacier currently listens to:
 
 - MPRIS media players through `Quickshell.Services.Mpris`
 - PipeWire default sink volume through `Quickshell.Services.Pipewire`
+- PipeWire link groups for microphone/video privacy activity through `Quickshell.Services.Pipewire`
+- shell fallbacks for privacy activity: `pactl list source-outputs short` for microphone capture and `fuser /dev/video*` for direct V4L2 camera users
 - UPower display battery through `Quickshell.Services.UPower`
 
 Volume deliberately does not open a full island state because end-4 already has its own volume OSD. It only paints a light gray open U-shaped trace just inside the current island perimeter for about a second; the top edge must stay unconnected.
 
+Privacy indicator behavior:
+
+- a small green dot appears to the right of the island when mic or camera privacy activity is detected
+- the dot is hidden immediately during hover; it must not animate or slide back into place after hover closes
+- the dot is informational only and should not reserve layout space or move Hyprland windows
+- if real camera/mic activity does not show the dot, first test the visual path with IPC `privacy`; then inspect PipeWire links and the shell fallbacks because some direct V4L2 camera users bypass PipeWire
+
 Media hover behavior:
 
 - hovering the idle handle shows the media layout when a MPRIS player has an active track
+- live MPRIS track changes must not call `showMedia()` by themselves; they only update cached track fields for the next hover
 - the media layout should stay compact; fix clipping with internal padding and smaller controls/artwork, not by making the island tall
 - album art is read from MPRIS `trackArtUrl`; if it is missing or not loaded, the widget falls back to the minimal equalizer mark
 - track progress uses the active MPRIS player's `position` and `length`; the formatter accepts either seconds or MPRIS microseconds
+- clicking or dragging the media progress bar requests an absolute seek on the active MPRIS player when `canSeek` and `positionSupported` are true
 - previous, play/pause, and next buttons sit under the timeline and call the active MPRIS player directly through Quickshell
 - while the media layout is visible, the hover hitbox does not accept clicks so the player buttons can receive them
+- the `bump / strip` handle switch is also visible in the media layout, not only in the generic idle hover content
+
+Hover menu behavior:
+
+- keep the bump/strip switch inside `IslandContent.qml`, not as a separate overlay sibling in `DynamicGlacier.qml`
+- use `HandleStyleSwitch.qml` for both idle and media layouts so hover/click behavior stays consistent
+- the switch should be text-like and minimal so it does not collide with the idle label
+- when `interactionOpen` is true, the top-level hover hitbox must use `Qt.NoButton`; otherwise it can steal clicks from the internal switch
+- privacy dots intentionally disappear during hover so they do not fight with expanded island interaction
 
 Check available live sources:
 
@@ -137,6 +165,38 @@ wpctl get-volume @DEFAULT_AUDIO_SINK@
 upower -e
 upower -i /org/freedesktop/UPower/devices/DisplayDevice
 ```
+
+Inspect active PipeWire source/link state:
+
+```sh
+pw-dump | jq -r '.[] | select(.type == "PipeWire:Interface:Node") | [.id, .info.props["media.class"], .info.props["node.name"], .info.props["node.description"], .info.props["application.name"]] | @tsv' | rg 'Audio/Source|Video/Source|Stream/Input/Audio|camera|microphone'
+pw-dump --monitor | rg 'Audio/Source|Video/Source|Stream/Input/Audio|camera|microphone'
+pactl list source-outputs short
+fuser /dev/video*
+```
+
+Manual privacy visual tests:
+
+```sh
+quickshell ipc --path quickshell call dynamicGlacier privacy true false
+quickshell ipc --path quickshell call dynamicGlacier privacy false true
+quickshell ipc --path quickshell call dynamicGlacier privacyLive
+```
+
+Live microphone trigger test:
+
+```sh
+timeout 5 pw-record --media-category=Capture --media-role=Communication /tmp/dynamic-glacier-mic-test.wav
+```
+
+Live camera trigger test through PipeWire:
+
+```sh
+pw-dump | jq -r '.[] | select(.type == "PipeWire:Interface:Node") | select((.info.props["media.class"] // "") | test("Video/Source")) | [.id, .info.props["node.name"], .info.props["node.description"]] | @tsv'
+timeout 5 gst-launch-1.0 pipewiresrc target-object=<node-name-or-id> ! videoconvert ! fakesink
+```
+
+Browser/portal camera usage should normally be visible through PipeWire link groups. Direct `/dev/video*` users are detected by the `fuser /dev/video*` fallback when the device node is visible to the session.
 
 Safe volume event test:
 
@@ -150,9 +210,11 @@ Optional media event test:
 ```sh
 playerctl play-pause
 playerctl play-pause
+playerctl position 10+
+playerctl position 10-
 ```
 
-The media test intentionally toggles playback; do not run it if you do not want to touch the active player.
+The media test intentionally toggles playback and seeks the active player; do not run it if you do not want to touch the active player. Track changes from live MPRIS should not expand the island automatically; hover the idle handle to inspect the updated track.
 
 ## Development Rules
 
@@ -167,7 +229,7 @@ The media test intentionally toggles playback; do not run it if you do not want 
 - Default visuals should be pure black first; add visible decoration only when it materially improves interaction clarity.
 - Keep the island in normal `WlrLayer.Top` with `ExclusionMode.Normal`, but keep `exclusiveZone` constant and small.
 - Do not bind `exclusiveZone` to expanded island height; that makes Hyprland push windows down during hover.
-- Keep the attached-top silhouette: sharp top corners, strongly rounded bottom corners.
+- Keep the attached-top silhouette: sharp top corners, capped rounded bottom corners.
 
 ## Common Failure Modes
 

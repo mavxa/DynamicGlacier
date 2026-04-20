@@ -17,18 +17,22 @@ Item {
     property bool canGoPrevious: false
     property bool canTogglePlaying: false
     property bool canGoNext: false
+    property bool canSeek: false
     property real mediaPosition: 0
     property real mediaLength: 0
     property bool forceExpanded: false
     property string handleStyle: "bump"
+    property string batteryHoverText: ""
     property string fontFamily: "Noto Sans"
     readonly property bool expanded: mode !== "idle" || forceExpanded
-    readonly property real bottomRadius: height / 2
+    readonly property real bottomRadius: Math.max(1, Math.min(height / 2, expanded ? Math.min(height * 0.28, 24) : Math.min(height * 0.42, 8)))
     readonly property color surfaceColor: !expanded && handleStyle === "strip" ? "#0c0c0c" : "#000000"
 
     signal previousRequested
     signal playPauseRequested
     signal nextRequested
+    signal seekRequested(real position)
+    signal handleStyleRequested(string style)
 
     transformOrigin: Item.Top
 
@@ -158,7 +162,7 @@ Item {
                 const right = Math.max(left + 1, width - inset);
                 const openTop = Math.min(height - inset - 1, Math.max(inset + 1, height * 0.18));
                 const bottom = Math.max(openTop + 1, height - inset);
-                const radius = Math.max(0, Math.min(root.bottomRadius - inset, (right - left) / 2, (bottom - openTop) / 2));
+                const radius = Math.max(0, Math.min(root.bottomRadius - inset, (right - left) / 2));
                 const arcSteps = 10;
                 const points = [
                     {
@@ -305,12 +309,16 @@ Item {
             canGoPrevious: root.canGoPrevious
             canTogglePlaying: root.canTogglePlaying
             canGoNext: root.canGoNext
+            canSeek: root.canSeek
             mediaPosition: root.mediaPosition
             mediaLength: root.mediaLength
             fontFamily: root.fontFamily
+            batteryHoverText: root.batteryHoverText
             onPreviousRequested: root.previousRequested()
             onPlayPauseRequested: root.playPauseRequested()
             onNextRequested: root.nextRequested()
+            onSeekRequested: position => root.seekRequested(position)
+            onHandleStyleRequested: style => root.handleStyleRequested(style)
         }
     }
 
