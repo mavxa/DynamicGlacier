@@ -1,16 +1,35 @@
 # Dynamic Glacier
 
-Dynamic Glacier is an experimental QML/Quickshell island widget for Hyprland.
+Dynamic Glacier is an experimental QML/Quickshell dynamic-island style widget for Hyprland.
 
-The goal is a native Linux desktop "dynamic island" style surface that feels at home in end-4 style dotfiles without using Electron, webviews, AGS, EWW, or JS/HTML/CSS as the main UI stack.
+It is built for people who want a native Linux island surface without Electron, webviews, AGS, EWW, or a JS/HTML/CSS UI stack. The project focuses on a small OLED-friendly black handle that expands only when you hover, click, or when a useful desktop event appears.
 
-The main design philosophy is minimalism: the idle widget should be a small pure-black bump at the top of the screen. On OLED displays it should feel almost invisible until hover, click, or an event expands it.
+## end-4 Friendly
+
+Dynamic Glacier is designed to run nicely next to [end-4/dots-hyprland](https://github.com/end-4/dots-hyprland).
+
+The current prototype deliberately avoids owning global desktop services that end-4 already handles well. For example, it does not register a standalone notification daemon by default, and volume feedback is only a subtle trace around the island instead of a second full volume OSD.
+
+The goal is to be an optional companion widget for end-4 style Hyprland setups: minimal, black, Quickshell-native, and easy to wire into an existing dotfiles tree.
 
 ## Status
 
-Early prototype. The first slice is a standalone Quickshell config with a polished animated shell, manual IPC triggers, and live links for MPRIS media, PipeWire volume, and UPower battery events.
+Early prototype. Dynamic Glacier currently ships as a standalone Quickshell config with animated island states, manual IPC triggers, and live links for MPRIS media, PipeWire volume/privacy state, and UPower battery data.
 
-Notifications are intentionally not handled through a standalone notification daemon yet, so the prototype can run next to an existing end-4 setup without taking over `org.freedesktop.Notifications`.
+Notifications are intentionally bridge/IPC-first for now. A direct notification server may be added later, but it should not fight existing notification services in end-4 based setups.
+
+## Features
+
+- Pure-black top-center island for Hyprland.
+- Small constant reserved zone so normal windows do not jump around.
+- Hover expansion may overlap windows instead of resizing the layout.
+- OLED-friendly idle handle with `bump` and barely visible `strip` modes.
+- Compact media player for MPRIS players with artwork, timeline, seek, previous, play/pause, and next.
+- Subtle open U-shaped volume trace instead of a duplicate volume mixer.
+- Battery text on hover through UPower.
+- Microphone/camera privacy dot through PipeWire plus small local fallbacks.
+- Focused-monitor placement under Hyprland.
+- IPC commands for manual testing and integration scripts.
 
 ## Run
 
@@ -20,7 +39,7 @@ From the repo root:
 quickshell --path quickshell
 ```
 
-In another terminal, trigger states:
+Trigger states from another terminal:
 
 ```sh
 quickshell ipc --path quickshell call dynamicGlacier demo
@@ -38,37 +57,16 @@ Toggle the looping demo:
 quickshell ipc --path quickshell call dynamicGlacier demoLoop
 ```
 
-## Current Scope
+## Integration Notes
 
-- top-center Wayland layer-shell panel
-- constant small Hyprland reserved zone for the idle handle
-- hover expansion can overlap windows without pushing them down
-- pure-black OLED-friendly idle bump
-- test switch between `bump` and barely visible `strip` handle
-- sharp top corners and rounded bottom corners
-- hover-to-peek and click-to-pin interaction
-- animated idle, notification, and media states
-- subtle open U-shaped volume trace instead of a second volume mixer
-- live MPRIS media link
-- hover media player with artwork, timeline, and previous/play-pause/next controls
-- live PipeWire volume link
-- live UPower battery event link
-- hover battery text
-- microphone/camera privacy dot through PipeWire plus small local fallbacks
-- focused-monitor placement under Hyprland
-- transparent click mask around the island
-- IPC functions for manual testing
+- Use it as a separate Quickshell config while developing: `quickshell --path quickshell`.
+- Add it to Hyprland autostart only after the visual behavior works on your monitor layout.
+- If you use end-4 dots, keep its existing notification service enabled and use Dynamic Glacier IPC/bridge hooks for notification experiments.
+- If end-4 already shows a volume OSD, keep Dynamic Glacier volume feedback subtle. The island should complement that setup, not duplicate it.
 
 ## Development
 
 Developer workflow and test commands are in [`docs/development.md`](docs/development.md).
-
-## Next Milestones
-
-- add a clean config surface for size, colors, timing, and monitor behavior
-- decide how to integrate notifications without fighting the end-4 notification service
-- design notification bridge/integration for end-4
-- document end-4 installation options
 
 ## References
 
