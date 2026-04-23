@@ -40,7 +40,77 @@ Notifications are intentionally bridge/IPC-first for now. A direct notification 
 - Focused-monitor placement under Hyprland.
 - IPC commands for manual testing and integration scripts.
 
+## Install
+
+Dynamic Glacier is distributed as a named Quickshell config, which matches the official Quickshell distribution guidance for dotfile-style shells.
+
+1. Download the repository:
+
+```sh
+git clone https://github.com/mavxa/DynamicGlacier.git
+cd DynamicGlacier
+```
+
+2. Run the installer:
+
+```sh
+bash install.sh
+```
+
+What the installer does:
+
+- installs runtime dependencies on supported distros
+- refreshes the font cache so `Noto Sans` is available
+- installs the config into `~/.config/quickshell/DynamicGlacier`
+- installs a launcher into `~/.local/bin/dynamic-glacier`
+- registers `exec-once = ~/.local/bin/dynamic-glacier` in `~/.config/hypr/hyprland.conf` when that file exists
+
+Supported dependency setup:
+
+- Arch Linux: installs main runtime packages with `pacman`, then installs `quickshell` from the AUR via `yay` or `paru` if available
+- Fedora: enables the official `errornointernet/quickshell` COPR and installs `quickshell` plus runtime packages with `dnf`
+- Debian/Ubuntu: installs runtime packages, but Quickshell still needs to be installed manually because the official Quickshell docs do not currently document an apt package path
+
+Installer options:
+
+```sh
+bash install.sh --symlink
+bash install.sh --skip-deps
+bash install.sh --doctor
+```
+
+- `--symlink`: use a symlink to the repo instead of copying files into `~/.config`
+- `--skip-deps`: only install the config and launcher
+- `--no-autostart`: do not modify the Hyprland config
+- `--hyprland-conf /path/to/hyprland.conf`: use a non-default Hyprland config file
+- `--doctor`: verify that Quickshell, the installed config, fonts, helper tools, and Hyprland autostart are in place
+
+If your distro is not covered by the script, install Quickshell first from the official docs, then run:
+
+```sh
+bash install.sh --skip-deps
+```
+
+Official references:
+
+- Quickshell install/setup: https://quickshell.outfoxxed.me/docs/guide/install-setup/
+- Quickshell distribution paths: https://quickshell.outfoxxed.me/docs/guide/distribution/
+
 ## Run
+
+After installation:
+
+```sh
+~/.local/bin/dynamic-glacier
+```
+
+By default the installer appends an `exec-once` entry to `~/.config/hypr/hyprland.conf`. If you use a different Hyprland config path, pass it during install:
+
+```sh
+bash install.sh --hyprland-conf /path/to/hyprland.conf
+```
+
+## Run From The Repo
 
 From the repo root:
 
@@ -66,10 +136,40 @@ Toggle the looping demo:
 quickshell ipc --path quickshell call dynamicGlacier demoLoop
 ```
 
+## Verify The Install
+
+Run the doctor mode:
+
+```sh
+bash install.sh --doctor
+```
+
+It checks `quickshell`, the installed config, launcher, `Noto Sans`, helper commands (`playerctl`, `upower`, `pactl`, `fuser`), and whether the Hyprland autostart entry is present.
+
+## Uninstall
+
+To remove the installed config, launcher, and managed Hyprland autostart entry:
+
+```sh
+bash uninstall.sh
+```
+
+For non-interactive removal:
+
+```sh
+bash uninstall.sh --yes
+```
+
+If you use a non-default Hyprland config path, pass it here too:
+
+```sh
+bash uninstall.sh --hyprland-conf /path/to/hyprland.conf
+```
+
 ## Integration Notes
 
 - Use it as a separate Quickshell config while developing: `quickshell --path quickshell`.
-- Add it to Hyprland autostart only after the visual behavior works on your monitor layout.
+- If you want to test manually before enabling autostart, install with `bash install.sh --no-autostart` and add autostart later.
 - If you use end-4 dots, keep its existing notification service enabled and use Dynamic Glacier IPC/bridge hooks for notification experiments.
 - If end-4 already shows a volume OSD, keep Dynamic Glacier volume feedback subtle. The island should complement that setup, not duplicate it.
 
