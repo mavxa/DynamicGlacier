@@ -69,6 +69,7 @@ Scope {
     readonly property bool microphoneActive: root.privacyDebugEnabled ? root.debugMicrophoneActive : root.liveLinksEnabled && (root.detectMicrophoneActivity() || root.polledMicrophoneActive)
     readonly property bool cameraActive: root.privacyDebugEnabled ? root.debugCameraActive : root.liveLinksEnabled && (root.detectVideoActivity() || root.polledCameraActive)
     readonly property bool privacyActive: root.microphoneActive || root.cameraActive
+    readonly property bool compactPrivacyIndicators: root.handleStyle === "strip" && root.visualMode === "idle" && !root.interactionOpen
     readonly property color microphoneIndicatorColor: "#ff9f1a"
     readonly property color cameraIndicatorColor: "#35ff72"
     readonly property string batteryHoverText: root.batteryAvailable() ? (root.batteryPluggedIn() ? "CHG " : "BAT ") + root.batteryLevel() + "%" : ""
@@ -766,65 +767,73 @@ Scope {
             Item {
                 id: privacyIndicators
 
+                readonly property int dotSize: root.compactPrivacyIndicators ? 4 : 9
+                readonly property int itemSize: root.compactPrivacyIndicators ? dotSize : 16
+                readonly property int dotSpacing: root.compactPrivacyIndicators ? 3 : 5
+                readonly property int haloSize: root.compactPrivacyIndicators ? 0 : 16
+                readonly property int islandGap: root.compactPrivacyIndicators ? 4 : 8
+
                 z: 35
-                x: island.x + island.width + 8
-                y: island.y + Math.max(2, island.height / 2 - height / 2)
-                width: (root.microphoneActive ? 16 : 0) + (root.cameraActive ? 16 : 0) + (root.microphoneActive && root.cameraActive ? 5 : 0)
-                height: 16
+                x: island.x + island.width + privacyIndicators.islandGap
+                y: island.y + Math.max(0, island.height / 2 - height / 2)
+                width: (root.microphoneActive ? privacyIndicators.itemSize : 0) + (root.cameraActive ? privacyIndicators.itemSize : 0) + (root.microphoneActive && root.cameraActive ? privacyIndicators.dotSpacing : 0)
+                height: privacyIndicators.itemSize
                 opacity: visible ? 1 : 0
                 visible: root.privacyActive && !root.interactionOpen
                 transformOrigin: Item.Center
 
                 Row {
                     anchors.centerIn: parent
-                    spacing: 5
+                    spacing: privacyIndicators.dotSpacing
 
                     Item {
-                        width: root.microphoneActive ? 16 : 0
-                        height: 16
+                        width: root.microphoneActive ? privacyIndicators.itemSize : 0
+                        height: privacyIndicators.itemSize
                         visible: root.microphoneActive
 
                         Rectangle {
                             anchors.centerIn: parent
-                            width: 16
-                            height: 16
-                            radius: 8
+                            width: privacyIndicators.haloSize
+                            height: privacyIndicators.haloSize
+                            radius: width / 2
                             color: root.microphoneIndicatorColor
                             opacity: 0.2
+                            visible: privacyIndicators.haloSize > 0
                         }
 
                         Rectangle {
                             anchors.centerIn: parent
-                            width: 9
-                            height: 9
-                            radius: 5
+                            width: privacyIndicators.dotSize
+                            height: privacyIndicators.dotSize
+                            radius: width / 2
                             color: root.microphoneIndicatorColor
-                            border.width: 1
+                            border.width: root.compactPrivacyIndicators ? 0 : 1
                             border.color: "#000000"
                         }
                     }
 
                     Item {
-                        width: root.cameraActive ? 16 : 0
-                        height: 16
+                        width: root.cameraActive ? privacyIndicators.itemSize : 0
+                        height: privacyIndicators.itemSize
                         visible: root.cameraActive
 
                         Rectangle {
                             anchors.centerIn: parent
-                            width: 16
-                            height: 16
-                            radius: 8
+                            width: privacyIndicators.haloSize
+                            height: privacyIndicators.haloSize
+                            radius: width / 2
                             color: root.cameraIndicatorColor
                             opacity: 0.18
+                            visible: privacyIndicators.haloSize > 0
                         }
 
                         Rectangle {
                             anchors.centerIn: parent
-                            width: 9
-                            height: 9
-                            radius: 5
+                            width: privacyIndicators.dotSize
+                            height: privacyIndicators.dotSize
+                            radius: width / 2
                             color: root.cameraIndicatorColor
-                            border.width: 1
+                            border.width: root.compactPrivacyIndicators ? 0 : 1
                             border.color: "#000000"
                         }
                     }
