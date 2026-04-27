@@ -18,6 +18,11 @@ Item {
     property bool canTogglePlaying: false
     property bool canGoNext: false
     property bool canSeek: false
+    property bool shuffleActive: false
+    property bool shuffleSupported: false
+    property string loopStateText: "OFF"
+    property bool loopActive: false
+    property bool loopSupported: false
     property real mediaPosition: 0
     property real mediaLength: 0
     property bool forceExpanded: false
@@ -34,6 +39,8 @@ Item {
     signal previousRequested
     signal playPauseRequested
     signal nextRequested
+    signal shuffleRequested
+    signal loopRequested
     signal seekRequested(real position)
     signal handleStyleRequested(string style)
 
@@ -313,6 +320,11 @@ Item {
             canTogglePlaying: root.canTogglePlaying
             canGoNext: root.canGoNext
             canSeek: root.canSeek
+            shuffleActive: root.shuffleActive
+            shuffleSupported: root.shuffleSupported
+            loopStateText: root.loopStateText
+            loopActive: root.loopActive
+            loopSupported: root.loopSupported
             mediaPosition: root.mediaPosition
             mediaLength: root.mediaLength
             mediaAvailable: root.mediaAvailable
@@ -323,6 +335,8 @@ Item {
             onPreviousRequested: root.previousRequested()
             onPlayPauseRequested: root.playPauseRequested()
             onNextRequested: root.nextRequested()
+            onShuffleRequested: root.shuffleRequested()
+            onLoopRequested: root.loopRequested()
             onSeekRequested: position => root.seekRequested(position)
             onHandleStyleRequested: style => root.handleStyleRequested(style)
         }

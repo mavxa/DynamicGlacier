@@ -18,6 +18,11 @@ Item {
     property bool canTogglePlaying: false
     property bool canGoNext: false
     property bool canSeek: false
+    property bool shuffleActive: false
+    property bool shuffleSupported: false
+    property string loopStateText: "OFF"
+    property bool loopActive: false
+    property bool loopSupported: false
     property real mediaPosition: 0
     property real mediaLength: 0
     property bool forceExpanded: false
@@ -38,6 +43,8 @@ Item {
     signal previousRequested
     signal playPauseRequested
     signal nextRequested
+    signal shuffleRequested
+    signal loopRequested
     signal seekRequested(real position)
     signal handleStyleRequested(string style)
 
@@ -526,6 +533,35 @@ Item {
                     Layout.preferredWidth: 24
                     Layout.preferredHeight: 24
                     radius: 10
+                    color: shuffleMouse.containsMouse && root.shuffleSupported ? "#151515" : (root.shuffleActive ? "#202020" : "#090909")
+                    border.width: 1
+                    border.color: root.shuffleActive ? "#f0f0f0" : (root.shuffleSupported ? "#232323" : "#111111")
+                    opacity: root.shuffleSupported ? 1 : 0.35
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "SHF"
+                        color: root.shuffleActive ? "#ffffff" : root.primaryText
+                        font.family: root.fontFamily
+                        font.pixelSize: 8
+                        font.weight: Font.Black
+                    }
+
+                    MouseArea {
+                        id: shuffleMouse
+
+                        anchors.fill: parent
+                        enabled: root.shuffleSupported
+                        hoverEnabled: true
+                        cursorShape: root.shuffleSupported ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: root.shuffleRequested()
+                    }
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 24
+                    Layout.preferredHeight: 24
+                    radius: 10
                     color: previousMouse.containsMouse && root.canGoPrevious ? "#151515" : "#090909"
                     border.width: 1
                     border.color: root.canGoPrevious ? "#232323" : "#111111"
@@ -606,6 +642,35 @@ Item {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.nextRequested()
+                    }
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 24
+                    Layout.preferredHeight: 24
+                    radius: 10
+                    color: loopMouse.containsMouse && root.loopSupported ? "#151515" : (root.loopActive ? "#202020" : "#090909")
+                    border.width: 1
+                    border.color: root.loopActive ? "#f0f0f0" : (root.loopSupported ? "#232323" : "#111111")
+                    opacity: root.loopSupported ? 1 : 0.35
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.loopStateText
+                        color: root.loopActive ? "#ffffff" : root.primaryText
+                        font.family: root.fontFamily
+                        font.pixelSize: root.loopStateText.length > 2 ? 8 : 9
+                        font.weight: Font.Black
+                    }
+
+                    MouseArea {
+                        id: loopMouse
+
+                        anchors.fill: parent
+                        enabled: root.loopSupported
+                        hoverEnabled: true
+                        cursorShape: root.loopSupported ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: root.loopRequested()
                     }
                 }
             }

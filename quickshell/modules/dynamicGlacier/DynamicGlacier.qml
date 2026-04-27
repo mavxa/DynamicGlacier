@@ -66,6 +66,12 @@ Scope {
     readonly property bool mediaCanGoNext: root.activePlayer?.canGoNext ?? false
     readonly property real mediaPosition: Math.max(0, root.activePlayer?.position ?? 0)
     readonly property real mediaLength: Math.max(0, root.activePlayer?.length ?? 0)
+    readonly property bool mediaShuffleSupported: root.activePlayer?.shuffleSupported ?? false
+    readonly property bool mediaShuffleActive: root.activePlayer?.shuffle ?? false
+    readonly property bool mediaLoopSupported: root.activePlayer?.loopSupported ?? false
+    readonly property var mediaLoopState: root.activePlayer?.loopState ?? MprisLoopState.None
+    readonly property bool mediaLoopActive: root.mediaLoopState !== MprisLoopState.None
+    readonly property string mediaLoopStateText: root.mediaLoopState === MprisLoopState.Track ? "ONE" : (root.mediaLoopState === MprisLoopState.Playlist ? "ALL" : "RPT")
     readonly property bool microphoneActive: root.privacyDebugEnabled ? root.debugMicrophoneActive : root.liveLinksEnabled && (root.detectMicrophoneActivity() || root.polledMicrophoneActive)
     readonly property bool cameraActive: root.privacyDebugEnabled ? root.debugCameraActive : root.liveLinksEnabled && (root.detectVideoActivity() || root.polledCameraActive)
     readonly property bool privacyActive: root.microphoneActive || root.cameraActive
@@ -292,6 +298,30 @@ Scope {
     function mediaNext() {
         if (root.activePlayer?.canGoNext)
             root.activePlayer.next();
+    }
+
+    function mediaToggleShuffle() {
+        const player = root.activePlayer;
+
+        if (!player || !player.shuffleSupported)
+            return;
+
+        player.shuffle = !player.shuffle;
+    }
+
+    function mediaCycleLoop() {
+        const player = root.activePlayer;
+
+        if (!player || !player.loopSupported)
+            return;
+
+        if (player.loopState === MprisLoopState.None) {
+            player.loopState = MprisLoopState.Track;
+        } else if (player.loopState === MprisLoopState.Track) {
+            player.loopState = MprisLoopState.Playlist;
+        } else {
+            player.loopState = MprisLoopState.None;
+        }
     }
 
     function maybeShowMediaFromPlayer(preferredPlayer, force) {
@@ -750,6 +780,11 @@ Scope {
                 canTogglePlaying: root.mediaCanTogglePlaying
                 canGoNext: root.mediaCanGoNext
                 canSeek: root.mediaCanSeek
+                shuffleActive: root.mediaShuffleActive
+                shuffleSupported: root.mediaShuffleSupported
+                loopStateText: root.mediaLoopStateText
+                loopActive: root.mediaLoopActive
+                loopSupported: root.mediaLoopSupported
                 mediaPosition: root.mediaPosition
                 mediaLength: root.mediaLength
                 mediaAvailable: root.mediaAvailable
@@ -760,6 +795,8 @@ Scope {
                 onPreviousRequested: root.mediaPrevious()
                 onPlayPauseRequested: root.mediaTogglePlaying()
                 onNextRequested: root.mediaNext()
+                onShuffleRequested: root.mediaToggleShuffle()
+                onLoopRequested: root.mediaCycleLoop()
                 onSeekRequested: position => root.mediaSeek(position)
                 onHandleStyleRequested: style => root.setHandleStyle(style)
             }
