@@ -1,0 +1,37 @@
+name: Update COPR
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "rpm/dynamic-glacier.spec"
+      - "quickshell/**"
+  workflow_dispatch:
+
+jobs:
+  copr-publish:
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tooling
+        run: dnf install -y rpm-build rpmdevtools copr-cli git
+
+      - name: Stamp the snapshot date
+        run: sed -i "s/^%global snapdate .*/%global snapdate $(date -u +%Y%m%d)/" rpm/dynamic-glacier.spec
+
+      - name: Build the source RPM
+        run: |
+          rpmdev-setuptree
+          spectool -g -R rpm/dynamic-glacier.spec
+          rpmbuild -bs rpm/dynamic-glacier.spec
+
+      - name: Submit to COPR
+        env:
+          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+        run: |
+          mkdir -p ~/.config
+          printf '%s\n' "$COPR_CONFIG" > ~/.config/copr
+          chmod 600 ~/.config/copr
+          copr-cli build --nowait mavxa/dynamic-glacier ~/rpmbuild/SRPMS/*.src.rpm

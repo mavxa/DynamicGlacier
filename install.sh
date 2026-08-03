@@ -9,7 +9,9 @@ XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 XDG_BIN_HOME="${XDG_BIN_HOME:-$HOME/.local/bin}"
 CONFIG_DIR="$XDG_CONFIG_HOME/quickshell/$CONFIG_NAME"
 LAUNCHER_PATH="$XDG_BIN_HOME/dynamic-glacier"
-HYPR_CONFIG_PATH="$XDG_CONFIG_HOME/hypr/hyprland.conf"
+HYPR_CONFIG_DIR="$XDG_CONFIG_HOME/hypr"
+HYPR_CONFIG_PATH="$HYPR_CONFIG_DIR/hyprland.conf"
+HYPR_CONFIG_EXPLICIT=0
 AUTOSTART_START_MARKER="# >>> Dynamic Glacier autostart >>>"
 AUTOSTART_END_MARKER="# <<< Dynamic Glacier autostart <<<"
 AUTOSTART_LINE="exec-once = $LAUNCHER_PATH"
@@ -37,6 +39,8 @@ Options:
                Do not modify the Hyprland config.
   --hyprland-conf PATH
                Override the Hyprland config path used for autostart and doctor checks.
+               Without it, ~/.config/hypr/custom/execs.conf is preferred when it
+               exists (end-4 dots layout), otherwise ~/.config/hypr/hyprland.conf.
   --doctor     Run installation checks without changing anything.
   -h, --help   Show this help text.
 
@@ -66,6 +70,11 @@ has_cmd() {
     command -v "$1" >/dev/null 2>&1
 }
 
+has_material_symbols() {
+    has_cmd fc-list || return 1
+    fc-list 2>/dev/null | grep -qi 'material symbols'
+}
+
 expand_path() {
     case "$1" in
         "~")
@@ -78,6 +87,16 @@ expand_path() {
             printf '%s\n' "$1"
             ;;
     esac
+}
+
+resolve_hypr_config_path() {
+    if [ "$HYPR_CONFIG_EXPLICIT" -eq 1 ]; then
+        return
+    fi
+
+    if [ -f "$HYPR_CONFIG_DIR/custom/execs.conf" ]; then
+        HYPR_CONFIG_PATH="$HYPR_CONFIG_DIR/custom/execs.conf"
+    fi
 }
 
 run_as_root() {
@@ -172,21 +191,64 @@ install_with_apt() {
     fi
 }
 
+ensure_dnf_copr_plugin() {
+    if dnf copr --help >/dev/null 2>&1; then
+        return 0
+    fi
+
+    log "Installing the dnf copr plugin"
+    if dnf --version 2>/dev/null | grep -q '^dnf5'; then
+        run_as_root dnf install -y dnf5-plugins
+    else
+        run_as_root dnf install -y dnf-plugins-core
+    fi
+
+    dnf copr --help >/dev/null 2>&1
+}
+
 install_with_dnf() {
     local packages=(
+        NetworkManager
+        NetworkManager-tui
+        bluez
         fontconfig
         google-noto-sans-fonts
+        pipewire
+        pipewire-utils
         playerctl
         psmisc
         pulseaudio-utils
-        quickshell
+        qt6-qt5compat
+        qt6-qtdeclarative
         upower
     )
 
-    log "Enabling the official Quickshell COPR for Fedora"
-    run_as_root dnf -y copr enable errornointernet/quickshell
+    if has_cmd quickshell; then
+        log "Quickshell is already installed"
+    elif dnf repoquery --quiet quickshell 2>/dev/null | grep -q .; then
+        log "Quickshell is available in the enabled repositories"
+        packages+=(quickshell)
+    elif ensure_dnf_copr_plugin; then
+        log "Quickshell is not in the enabled repositories; enabling the Quickshell COPR"
+        if run_as_root dnf copr enable -y errornointernet/quickshell; then
+            packages+=(quickshell)
+        else
+            warn "Failed to enable copr:errornointernet/quickshell. Install Quickshell manually: https://quickshell.outfoxxed.me/docs/guide/install-setup/"
+        fi
+    else
+        warn "The dnf copr plugin is unavailable, so the Quickshell COPR was not enabled. Install Quickshell manually: https://quickshell.outfoxxed.me/docs/guide/install-setup/"
+    fi
+
     log "Installing runtime packages with dnf"
     run_as_root dnf install -y "${packages[@]}"
+
+    if ! has_cmd quickshell; then
+        warn "Quickshell is not installed. Enable copr:errornointernet/quickshell manually or build it from the official Quickshell docs."
+    fi
+
+    if ! has_material_symbols; then
+        warn "Material Symbols is not packaged for Fedora. Install the variable font into ~/.local/share/fonts to get the media control icons."
+    fi
 }
 
 install_with_pacman() {
@@ -317,6 +379,12 @@ run_doctor() {
         doctor_warn "fc-match is missing; cannot verify fonts"
     fi
 
+    if has_material_symbols; then
+        doctor_ok "Material Symbols is available through fontconfig"
+    else
+        doctor_warn "Material Symbols is missing; media control icons will not render"
+    fi
+
     for helper in playerctl upower pactl fuser; do
         if has_cmd "$helper"; then
             doctor_ok "$helper is available"
@@ -410,9 +478,11 @@ while [ "$#" -gt 0 ]; do
             shift
             [ "$#" -gt 0 ] || die "--hyprland-conf requires a path"
             HYPR_CONFIG_PATH="$(expand_path "$1")"
+            HYPR_CONFIG_EXPLICIT=1
             ;;
         --hyprland-conf=*)
             HYPR_CONFIG_PATH="$(expand_path "${1#*=}")"
+            HYPR_CONFIG_EXPLICIT=1
             ;;
         --doctor)
             DOCTOR_MODE=1
@@ -430,6 +500,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 AUTOSTART_LINE="exec-once = $LAUNCHER_PATH"
+resolve_hypr_config_path
 
 if [ "$DOCTOR_MODE" -eq 1 ]; then
     run_doctor

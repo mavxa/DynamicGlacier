@@ -7,10 +7,13 @@ XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 XDG_BIN_HOME="${XDG_BIN_HOME:-$HOME/.local/bin}"
 CONFIG_DIR="$XDG_CONFIG_HOME/quickshell/$CONFIG_NAME"
 LAUNCHER_PATH="$XDG_BIN_HOME/dynamic-glacier"
-HYPR_CONFIG_PATH="$XDG_CONFIG_HOME/hypr/hyprland.conf"
+HYPR_CONFIG_DIR="$XDG_CONFIG_HOME/hypr"
+HYPR_CONFIG_PATH="$HYPR_CONFIG_DIR/hyprland.conf"
+HYPR_CONFIG_EXPLICIT=0
 AUTOSTART_START_MARKER="# >>> Dynamic Glacier autostart >>>"
 AUTOSTART_END_MARKER="# <<< Dynamic Glacier autostart <<<"
 AUTOSTART_LINE="exec-once = $LAUNCHER_PATH"
+PACKAGE_AUTOSTART_LINE="exec-once = dynamic-glacier"
 ASSUME_YES=0
 
 usage() {
@@ -25,6 +28,8 @@ Options:
   --yes               Skip the confirmation prompt.
   --hyprland-conf PATH
                       Override the Hyprland config path used for autostart cleanup.
+                      Without it, both ~/.config/hypr/custom/execs.conf (end-4 dots
+                      layout) and ~/.config/hypr/hyprland.conf are cleaned.
   -h, --help          Show this help text.
 
 Examples:
@@ -102,31 +107,63 @@ remove_launcher() {
     log "Launcher not present at $LAUNCHER_PATH"
 }
 
-remove_hyprland_autostart() {
-    local temp_file
+autostart_candidates() {
+    if [ "$HYPR_CONFIG_EXPLICIT" -eq 1 ]; then
+        printf '%s\n' "$HYPR_CONFIG_PATH"
+        return
+    fi
 
-    if [ ! -f "$HYPR_CONFIG_PATH" ]; then
+    printf '%s\n' "$HYPR_CONFIG_DIR/custom/execs.conf" "$HYPR_CONFIG_PATH"
+}
+
+clean_autostart_file() {
+    local target="$1"
+    local temp_file
+    local cleaned=0
+
+    if grep -Fq "$AUTOSTART_START_MARKER" "$target"; then
+        temp_file="$(mktemp)"
+        strip_managed_autostart_block "$target" "$temp_file"
+        mv "$temp_file" "$target"
+        log "Removed managed Hyprland autostart block from $target"
+        cleaned=1
+    fi
+
+    # Bare lines written by the packaged launcher or by install.sh before markers existed.
+    if grep -Fqx "$AUTOSTART_LINE" "$target" || grep -Fqx "$PACKAGE_AUTOSTART_LINE" "$target"; then
+        temp_file="$(mktemp)"
+        grep -Fvx "$AUTOSTART_LINE" "$target" | grep -Fvx "$PACKAGE_AUTOSTART_LINE" > "$temp_file" || true
+        mv "$temp_file" "$target"
+        log "Removed Hyprland autostart line from $target"
+        cleaned=1
+    fi
+
+    return $((1 - cleaned))
+}
+
+remove_hyprland_autostart() {
+    local target
+    local found=0
+    local cleaned=0
+
+    while IFS= read -r target; do
+        [ -f "$target" ] || continue
+        found=1
+        if clean_autostart_file "$target"; then
+            cleaned=1
+        fi
+    done <<EOF
+$(autostart_candidates)
+EOF
+
+    if [ "$found" -eq 0 ]; then
         log "Hyprland config not found at $HYPR_CONFIG_PATH"
         return
     fi
 
-    if grep -Fq "$AUTOSTART_START_MARKER" "$HYPR_CONFIG_PATH"; then
-        temp_file="$(mktemp)"
-        strip_managed_autostart_block "$HYPR_CONFIG_PATH" "$temp_file"
-        mv "$temp_file" "$HYPR_CONFIG_PATH"
-        log "Removed managed Hyprland autostart block from $HYPR_CONFIG_PATH"
-        return
+    if [ "$cleaned" -eq 0 ]; then
+        log "No Dynamic Glacier autostart entry found"
     fi
-
-    if grep -Fqx "$AUTOSTART_LINE" "$HYPR_CONFIG_PATH"; then
-        temp_file="$(mktemp)"
-        grep -Fvx "$AUTOSTART_LINE" "$HYPR_CONFIG_PATH" > "$temp_file" || true
-        mv "$temp_file" "$HYPR_CONFIG_PATH"
-        log "Removed Hyprland autostart line from $HYPR_CONFIG_PATH"
-        return
-    fi
-
-    log "No Dynamic Glacier autostart entry found in $HYPR_CONFIG_PATH"
 }
 
 while [ "$#" -gt 0 ]; do
@@ -141,9 +178,11 @@ while [ "$#" -gt 0 ]; do
                 exit 1
             }
             HYPR_CONFIG_PATH="$(expand_path "$1")"
+            HYPR_CONFIG_EXPLICIT=1
             ;;
         --hyprland-conf=*)
             HYPR_CONFIG_PATH="$(expand_path "${1#*=}")"
+            HYPR_CONFIG_EXPLICIT=1
             ;;
         -h|--help)
             usage
