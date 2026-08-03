@@ -591,6 +591,25 @@ Scope {
         return Quickshell.screens.length > 0 ? Quickshell.screens[0] : null;
     }
 
+    // Opens (or closes, if already open) the Wi-Fi panel anchored just
+    // below/left of whichever item triggered it, in islandWindow's own
+    // coordinate space.
+    function openWifiPanel(anchorItem) {
+        if (!anchorItem)
+            return;
+
+        if (wifiPanel.visible) {
+            wifiPanel.close();
+            return;
+        }
+
+        const scenePos = anchorItem.mapToItem(null, anchorItem.width, anchorItem.height);
+        const targetX = Math.max(8, scenePos.x - wifiPanel.implicitWidth);
+        const targetY = scenePos.y + 10;
+
+        wifiPanel.openAt(targetX, targetY);
+    }
+
     Timer {
         id: collapseTimer
         repeat: false
@@ -682,10 +701,6 @@ Scope {
         stdout: StdioCollector {
             onStreamFinished: root.updatePolledBrightness(text)
         }
-    }
-
-    Process {
-        id: wifiSettingsProc
     }
 
     Process {
@@ -887,7 +902,7 @@ Scope {
                     root.mediaHoverSuppressed = true;
                     root.showIdle();
                 }
-                onWifiSettingsRequested: wifiSettingsProc.exec(["sh", "-c", "kitty --title 'WiFi Settings' nmtui-connect &"])
+                onWifiSettingsRequested: anchorItem => root.openWifiPanel(anchorItem)
                 onBtSettingsRequested: btSettingsProc.exec(["sh", "-c", "bluedevil-wizard &"])
                 onSeekRequested: position => root.mediaSeek(position)
                 onHandleStyleRequested: style => root.setHandleStyle(style)
@@ -1056,6 +1071,12 @@ Scope {
                 }
             }
         }
+    }
+
+    WifiPanel {
+        id: wifiPanel
+
+        anchorWindow: islandWindow
     }
 
     IpcHandler {

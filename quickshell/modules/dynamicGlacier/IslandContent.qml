@@ -56,7 +56,7 @@ Item {
     signal loopRequested
     signal favoriteRequested
     signal dismissRequested
-    signal wifiSettingsRequested
+    signal wifiSettingsRequested(var anchorItem)
     signal btSettingsRequested
     signal seekRequested(real position)
     signal handleStyleRequested(string style)
@@ -277,6 +277,8 @@ Item {
 
                     // WiFi
                     Item {
+                        id: wifiHitArea
+
                         Layout.alignment: Qt.AlignRight
                         Layout.preferredWidth: wifiRow.width
                         Layout.preferredHeight: wifiRow.height
@@ -307,7 +309,7 @@ Item {
                             anchors.margins: -4
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.wifiSettingsRequested()
+                            onClicked: root.wifiSettingsRequested(wifiHitArea)
                         }
                     }
 

@@ -54,7 +54,7 @@ Item {
     signal loopRequested
     signal favoriteRequested
     signal dismissRequested
-    signal wifiSettingsRequested
+    signal wifiSettingsRequested(var anchorItem)
     signal btSettingsRequested
     signal seekRequested(real position)
     signal handleStyleRequested(string style)
@@ -445,7 +445,7 @@ Item {
             onLoopRequested: root.loopRequested()
             onFavoriteRequested: root.favoriteRequested()
             onDismissRequested: root.dismissRequested()
-            onWifiSettingsRequested: root.wifiSettingsRequested()
+            onWifiSettingsRequested: anchorItem => root.wifiSettingsRequested(anchorItem)
             onBtSettingsRequested: root.btSettingsRequested()
             onSeekRequested: position => root.seekRequested(position)
             onHandleStyleRequested: style => root.handleStyleRequested(style)
