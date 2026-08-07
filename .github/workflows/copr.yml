@@ -30,7 +30,7 @@ jobs:
     container: fedora:44
     steps:
       - name: Check out the repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -41,6 +41,7 @@ jobs:
       - name: Stamp the source revision
         run: |
           set -eu
+          cd "$GITHUB_WORKSPACE"
           commit_date="$(git show -s --format=%cd --date=format:%Y%m%d%H%M%S "$GITHUB_SHA")"
           short_commit="$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
           sed -i \
@@ -52,6 +53,7 @@ jobs:
       - name: Build the source RPM
         run: |
           set -eu
+          cd "$GITHUB_WORKSPACE"
           rpmdev-setuptree
           spectool -g -R rpm/dynamic-glacier.spec
           rpmbuild -bs rpm/dynamic-glacier.spec
