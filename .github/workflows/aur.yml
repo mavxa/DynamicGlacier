@@ -1,4 +1,4 @@
-name: Update AUR
+name: Publish AUR
 
 on:
   push:
@@ -6,17 +6,29 @@ on:
     paths:
       - "aur/PKGBUILD"
       - "aur/dynamic-glacier.install"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-aur
+  cancel-in-progress: false
 
 jobs:
   aur-publish:
+    name: AUR deploy
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v3.0.1
+        uses: KSXGitHub/github-actions-deploy-aur@a97f56a8425a7a7f3b8c58607f769c69b089cadb # v3.0.1
         with:
           pkgname: dynamic-glacier-git
           pkgbuild: ./aur/PKGBUILD

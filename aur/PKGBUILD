@@ -1,3 +1,5 @@
+# Maintainer: mavxa <mavxa at duck dot com>
+
 pkgname=dynamic-glacier-git
 pkgver=r15.gf0e6d20
 pkgrel=1

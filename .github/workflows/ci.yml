@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shell:
+    name: Shell and installer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Check shell syntax
+        run: bash -n install.sh uninstall.sh aur/PKGBUILD aur/dynamic-glacier.install
+
+      - name: Run ShellCheck
+        run: shellcheck --shell=bash --exclude=SC2088 install.sh uninstall.sh aur/dynamic-glacier.install
+
+      - name: Test manual install and uninstall
+        run: |
+          set -euo pipefail
+
+          test_home="$(mktemp -d)"
+          trap 'rm -rf "$test_home"' EXIT
+
+          install -d "$test_home/bin"
+          printf '#!/usr/bin/env sh\nexit 0\n' > "$test_home/bin/quickshell"
+          chmod +x "$test_home/bin/quickshell"
+
+          env \
+            HOME="$test_home" \
+            XDG_CONFIG_HOME="$test_home/.config" \
+            XDG_BIN_HOME="$test_home/.local/bin" \
+            PATH="$test_home/bin:$PATH" \
+            bash install.sh --copy --skip-deps --no-autostart
+
+          test -f "$test_home/.config/quickshell/DynamicGlacier/shell.qml"
+          test -x "$test_home/.local/bin/dynamic-glacier"
+
+          env \
+            HOME="$test_home" \
+            XDG_CONFIG_HOME="$test_home/.config" \
+            XDG_BIN_HOME="$test_home/.local/bin" \
+            bash uninstall.sh --yes
+
+          test ! -e "$test_home/.config/quickshell/DynamicGlacier"
+          test ! -e "$test_home/.local/bin/dynamic-glacier"
+
+  aur-package:
+    name: AUR package
+    runs-on: ubuntu-latest
+    container: archlinux:base
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install packaging tools
+        run: pacman -Syu --noconfirm base-devel git
+
+      - name: Build the package without installing runtime dependencies
+        run: |
+          set -euo pipefail
+
+          useradd --create-home builder
+          cp -a aur /home/builder/aur
+          chown -R builder:builder /home/builder/aur
+
+          runuser -u builder -- bash -lc '
+            set -euo pipefail
+            cd /home/builder/aur
+            makepkg --printsrcinfo > .SRCINFO
+            makepkg --noconfirm --nodeps --cleanbuild --force
+          '
+
+          package_file="$(find /home/builder/aur -maxdepth 1 -type f -name '*.pkg.tar.*' -print -quit)"
+          test -n "$package_file"
+          bsdtar -tf "$package_file" | grep -qx 'usr/bin/dynamic-glacier'
+          bsdtar -tf "$package_file" | grep -qx 'usr/share/dynamic-glacier/quickshell/shell.qml'
+
+  quickshell-smoke:
+    name: Quickshell smoke
+    runs-on: ubuntu-latest
+    container: archlinux:base
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install Quickshell and a headless Wayland compositor
+        run: pacman -Syu --noconfirm quickshell qt6-5compat weston
+
+      - name: Load the configuration under headless Weston
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          QT_QUICK_BACKEND: software
+          XDG_RUNTIME_DIR: /tmp/runtime-root
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$XDG_RUNTIME_DIR"
+
+          weston \
+            --backend=headless-backend.so \
+            --renderer=pixman \
+            --socket=wayland-ci \
+            --idle-time=0 \
+            > /tmp/weston.log 2>&1 &
+          weston_pid=$!
+          trap 'kill "$weston_pid" 2>/dev/null || true; wait "$weston_pid" 2>/dev/null || true' EXIT
+
+          for _ in $(seq 1 50); do
+            [ -S "$XDG_RUNTIME_DIR/wayland-ci" ] && break
+            sleep 0.1
+          done
+          test -S "$XDG_RUNTIME_DIR/wayland-ci"
+
+          export WAYLAND_DISPLAY=wayland-ci
+          set +e
+          timeout 8 quickshell --path "$GITHUB_WORKSPACE/quickshell" --verbose > /tmp/quickshell.log 2>&1
+          quickshell_status=$?
+          set -e
+
+          cat /tmp/quickshell.log
+          if [ "$quickshell_status" -ne 0 ] && [ "$quickshell_status" -ne 124 ]; then
+            exit "$quickshell_status"
+          fi
+
+          grep -q "Configuration Loaded" /tmp/quickshell.log
+          ! grep -q "Failed to load configuration" /tmp/quickshell.log
