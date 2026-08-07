@@ -42,6 +42,7 @@ jobs:
         run: |
           set -eu
           cd "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           commit_date="$(git show -s --format=%cd --date=format:%Y%m%d%H%M%S "$GITHUB_SHA")"
           short_commit="$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
           sed -i \
