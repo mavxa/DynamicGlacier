@@ -29,14 +29,14 @@ jobs:
     timeout-minutes: 15
     container: fedora:44
     steps:
+      - name: Install build tooling
+        run: dnf install -y rpm-build rpmdevtools copr-cli git
+
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-
-      - name: Install build tooling
-        run: dnf install -y rpm-build rpmdevtools copr-cli git
 
       - name: Stamp the source revision
         run: |
