@@ -20,6 +20,8 @@ Scope {
     property int volume: 42
     property bool muted: false
     property bool volumeIndicatorVisible: false
+    // "audio" or "brightness" — the HUD is the same pill, only the glyph differs.
+    property string volumeKind: "audio"
     property bool playing: true
     property bool demoRunning: false
     property bool pointerInside: false
@@ -30,8 +32,10 @@ Scope {
     property bool privacyDebugEnabled: false
     property bool debugMicrophoneActive: false
     property bool debugCameraActive: false
-    property bool polledMicrophoneActive: false
     property bool polledCameraActive: false
+    // Empty when the machine has no backlight, which disables the poll.
+    property string backlightPath: ""
+    property int backlightMaxRaw: 0
     property date currentDateTime: new Date()
     property string handleStyle: "bump"
     property var activePlayer: null
@@ -48,7 +52,10 @@ Scope {
     readonly property bool interactionOpen: root.mode === "idle" && (root.pointerInside || root.pinnedOpen)
     readonly property bool trayVisible: root.handleStyle === "bump" && !root.interactionOpen && root.visualMode === "idle"
     readonly property bool hoverMediaMode: root.liveLinksEnabled && root.mode === "idle" && root.interactionOpen && !root.mediaHoverSuppressed && root.hasActiveMedia()
-    readonly property string visualMode: root.hoverMediaMode ? "media" : root.mode
+    // The volume HUD is a transient morph, so it only takes over the idle shape —
+    // a notification, the media card or an open panel all outrank it.
+    readonly property bool volumeHudMode: root.volumeIndicatorVisible && root.mode === "idle"
+    readonly property string visualMode: root.volumeHudMode ? "volume" : (root.hoverMediaMode ? "media" : root.mode)
     readonly property int idleTopMargin: 0
     readonly property int expandedTopMargin: 0
     readonly property int reservedZone: root.handleStyle === "strip" ? 0 : 24
@@ -63,6 +70,16 @@ Scope {
     readonly property int notifyHeight: 74
     readonly property int mediaWidth: 380
     readonly property int mediaHeight: 132
+    readonly property int volumeWidth: 244
+    readonly property int volumeHeight: 48
+    readonly property int wifiWidth: 340
+    // Floor for the Wi-Fi panel; the island grows past it to fit the network list,
+    // up to wifiMaxPanelHeight.
+    readonly property int wifiMinHeight: 132
+    readonly property int wifiMaxPanelHeight: 420
+    readonly property int appsWidth: 340
+    readonly property int appsMinHeight: 132
+    readonly property int appsMaxPanelHeight: 470
     readonly property string fontFamily: "Noto Sans"
     readonly property var audioSink: Pipewire.defaultAudioSink
     readonly property bool mediaCanGoPrevious: root.activePlayer?.canGoPrevious ?? false
@@ -76,7 +93,7 @@ Scope {
     readonly property var mediaLoopState: root.activePlayer?.loopState ?? MprisLoopState.None
     readonly property bool mediaLoopActive: root.mediaLoopState !== MprisLoopState.None
     readonly property string mediaLoopStateText: root.mediaLoopState === MprisLoopState.Track ? "ONE" : (root.mediaLoopState === MprisLoopState.Playlist ? "ALL" : "RPT")
-    readonly property bool microphoneActive: root.privacyDebugEnabled ? root.debugMicrophoneActive : root.liveLinksEnabled && (root.detectMicrophoneActivity() || root.polledMicrophoneActive)
+    readonly property bool microphoneActive: root.privacyDebugEnabled ? root.debugMicrophoneActive : root.liveLinksEnabled && root.detectMicrophoneActivity()
     readonly property bool cameraActive: root.privacyDebugEnabled ? root.debugCameraActive : root.liveLinksEnabled && (root.detectVideoActivity() || root.polledCameraActive)
     readonly property bool privacyActive: root.microphoneActive || root.cameraActive
     readonly property bool compactPrivacyIndicators: root.handleStyle === "strip" && root.visualMode === "idle" && !root.interactionOpen
@@ -93,11 +110,35 @@ Scope {
     property int wifiSignal: 0
     readonly property bool wifiConnected: root.wifiSsid !== ""
 
+    // WiFi manager panel (morphs the island into mode "wifi")
+    property bool wifiRadioEnabled: true
+    property var wifiNetworks: []
+    property string wifiExpandedSsid: ""
+    property string wifiPasswordDraft: ""
+    property string pendingWifiPassword: ""
+    property string wifiStatusText: ""
+    property bool wifiConnecting: false
+    property double lastWifiScanAt: 0
+
     // Bluetooth
     property string btDeviceName: ""
     property int btBattery: -1
     readonly property bool btEnabled: true
     readonly property bool btConnected: root.btDeviceName !== ""
+
+    // App favorites dock (morphs the island into mode "apps")
+    readonly property int appsFavoriteSlots: 8
+    readonly property string favoritesPath: Quickshell.statePath("favorites.json")
+    readonly property string favoritesDir: root.parentDirectory(root.favoritesPath)
+    property var favoriteAppIds: []
+    property bool appsPickerOpen: false
+    property string appsSearchDraft: ""
+    property string appsStatusText: ""
+    // Every installed launcher entry, name-sorted, with its icon already resolved.
+    readonly property var appEntries: root.buildAppEntries()
+    readonly property var appsPickerEntries: root.filterAppEntries()
+    // Always appsFavoriteSlots long, so the grid can render empty slots as "add here".
+    readonly property var favoriteAppEntries: root.buildFavoriteEntries()
 
     function targetWidth() {
         switch (root.visualMode) {
@@ -105,6 +146,12 @@ Scope {
             return root.notifyWidth;
         case "media":
             return root.mediaWidth;
+        case "volume":
+            return root.volumeWidth;
+        case "wifi":
+            return root.wifiWidth;
+        case "apps":
+            return root.appsWidth;
         default:
             if (root.interactionOpen)
                 return root.peekWidth;
@@ -118,6 +165,12 @@ Scope {
             return root.notifyHeight;
         case "media":
             return root.mediaHeight;
+        case "volume":
+            return root.volumeHeight;
+        case "wifi":
+            return root.wifiMinHeight;
+        case "apps":
+            return root.appsMinHeight;
         default:
             if (root.interactionOpen)
                 return root.peekHeight;
@@ -175,6 +228,12 @@ Scope {
         root.pinnedOpen = false;
         root.title = "Ready";
         root.body = "Waiting for a signal";
+        // The picker owns the only focused text field in the island. Leaving it
+        // flagged open while the island collapses would keep a hidden TextInput
+        // holding the keyboard.
+        root.appsPickerOpen = false;
+        root.appsSearchDraft = "";
+        root.appsStatusText = "";
 
         if (root.liveLinksEnabled) {
             root.chooseActivePlayer(null);
@@ -210,10 +269,12 @@ Scope {
         root.hold(6200);
     }
 
+    // The HUD no longer borrows `title` — it morphs into its own pill, and writing
+    // the title here would have leaked "Volume" into a notification sitting behind it.
     function showVolume(level, isMuted) {
         root.volume = Math.max(0, Math.min(100, Number(level)));
         root.muted = isMuted;
-        root.title = root.muted ? "Muted" : "Volume";
+        root.volumeKind = "audio";
         root.volumeIndicatorVisible = true;
         volumeIndicatorTimer.restart();
     }
@@ -221,7 +282,7 @@ Scope {
     function showBrightness(level) {
         root.volume = Math.max(0, Math.min(100, Number(level)));
         root.muted = false;
-        root.title = "Brightness";
+        root.volumeKind = "brightness";
         root.volumeIndicatorVisible = true;
         volumeIndicatorTimer.restart();
     }
@@ -433,21 +494,19 @@ Scope {
     }
 
     function updatePolledPrivacy(text) {
-        const parts = text.trim().split(/\s+/);
-
-        if (parts.length < 2)
-            return;
-
-        const newMic = parts[0] === "1";
-        const newCam = parts[1] === "1";
-
-        root.polledMicrophoneActive = newMic;
-        root.polledCameraActive = newCam;
+        root.polledCameraActive = text.trim() === "1";
     }
 
-    function updatePolledBrightness(text) {
-        const rawLevel = Number(text.trim());
+    // Raw sysfs value in, percentage out. The mic/max scaling the old shell
+    // pipeline did with integer arithmetic now happens here.
+    function updateRawBrightness(raw) {
+        if (!isFinite(raw) || raw < 0 || root.backlightMaxRaw <= 0)
+            return;
 
+        root.updatePolledBrightness(raw * 100 / root.backlightMaxRaw);
+    }
+
+    function updatePolledBrightness(rawLevel) {
         if (!isFinite(rawLevel) || rawLevel < 0)
             return;
 
@@ -591,6 +650,346 @@ Scope {
         return Quickshell.screens.length > 0 ? Quickshell.screens[0] : null;
     }
 
+    // Morphs the island into the Wi-Fi manager, or collapses it back to
+    // idle if it is already showing.
+    function toggleWifiPanel() {
+        if (root.mode === "wifi") {
+            root.showIdle();
+            return;
+        }
+
+        collapseTimer.stop();
+        root.mode = "wifi";
+        root.wifiExpandedSsid = "";
+        root.wifiPasswordDraft = "";
+        root.wifiStatusText = "";
+        root.refreshWifiRadioState();
+        root.scanWifiNetworks();
+    }
+
+    function refreshWifiRadioState() {
+        wifiRadioStateProc.exec(["nmcli", "-t", "-f", "WIFI", "radio"]);
+    }
+
+    function scanWifiNetworks() {
+        root.lastWifiScanAt = Date.now();
+        wifiScanProc.exec(["nmcli", "-t", "-f", "active,ssid,signal,security", "dev", "wifi", "list", "--rescan", "yes"]);
+    }
+
+    // Warms the network list while the island is merely open, so the Wi-Fi panel
+    // has something to show — and can size itself correctly — the instant it opens.
+    function prewarmWifiNetworks() {
+        if (Date.now() - root.lastWifiScanAt < 10000)
+            return;
+
+        root.refreshWifiRadioState();
+        root.scanWifiNetworks();
+    }
+
+    function splitNmcliLine(line) {
+        const parts = [];
+        let current = "";
+        let i = 0;
+
+        while (i < line.length) {
+            const ch = line[i];
+
+            if (ch === "\\" && i + 1 < line.length) {
+                current += line[i + 1];
+                i += 2;
+                continue;
+            }
+
+            if (ch === ":") {
+                parts.push(current);
+                current = "";
+                i += 1;
+                continue;
+            }
+
+            current += ch;
+            i += 1;
+        }
+
+        parts.push(current);
+        return parts;
+    }
+
+    function parseWifiNetworks(text) {
+        const lines = text.split("\n").filter(line => line.trim() !== "");
+        const parsed = [];
+        const seen = {};
+
+        for (let i = 0; i < lines.length; i += 1) {
+            const parts = root.splitNmcliLine(lines[i]);
+
+            if (parts.length < 4)
+                continue;
+
+            const active = parts[0] === "yes";
+            const ssid = parts[1];
+            const signal = parseInt(parts[2]) || 0;
+            const security = parts.slice(3).join(":");
+            const secured = security !== "" && security !== "--";
+
+            if (ssid === "" || seen[ssid])
+                continue;
+
+            seen[ssid] = true;
+            parsed.push({
+                ssid: ssid,
+                signal: signal,
+                secured: secured,
+                active: active
+            });
+        }
+
+        parsed.sort((a, b) => b.signal - a.signal);
+        root.wifiNetworks = parsed;
+    }
+
+    function toggleWifiRadio() {
+        const nextState = !root.wifiRadioEnabled;
+
+        root.wifiRadioEnabled = nextState;
+        wifiRadioToggleProc.exec(["nmcli", "radio", "wifi", nextState ? "on" : "off"]);
+    }
+
+    function requestWifiExpand(ssid) {
+        root.wifiExpandedSsid = root.wifiExpandedSsid === ssid ? "" : ssid;
+        root.wifiPasswordDraft = "";
+        root.wifiStatusText = "";
+    }
+
+    function connectToWifiNetwork(ssid, secured) {
+        if (secured && root.wifiPasswordDraft === "") {
+            root.wifiStatusText = "Password required";
+            return;
+        }
+
+        root.wifiConnecting = true;
+        root.wifiStatusText = "";
+
+        const command = ["nmcli"];
+
+        if (secured) {
+            root.pendingWifiPassword = root.wifiPasswordDraft;
+            command.push("--ask");
+        }
+
+        command.push("dev", "wifi", "connect", ssid);
+
+        // Process executes this list directly, so SSIDs and passwords never pass
+        // through a shell. Secured networks receive the password over stdin, which
+        // also keeps it out of the process list.
+        wifiConnectProc.exec(command);
+    }
+
+    function disconnectFromWifiNetwork(ssid) {
+        root.wifiConnecting = true;
+        root.wifiStatusText = "";
+        wifiDisconnectProc.exec(["nmcli", "con", "down", "id", ssid]);
+    }
+
+    function parseActiveWifi(text) {
+        const lines = text.split("\n");
+
+        for (let i = 0; i < lines.length; i += 1) {
+            if (lines[i] === "")
+                continue;
+
+            const parts = root.splitNmcliLine(lines[i]);
+
+            if (parts.length >= 3 && parts[0] === "yes") {
+                root.wifiSsid = parts[1] === "--" ? "" : parts[1];
+                root.wifiSignal = parseInt(parts[2]) || 0;
+                return;
+            }
+        }
+
+        root.wifiSsid = "";
+        root.wifiSignal = 0;
+    }
+
+    function parentDirectory(path) {
+        const separator = path.lastIndexOf("/");
+
+        return separator > 0 ? path.slice(0, separator) : ".";
+    }
+
+    // `check` makes a missing icon resolve to "" instead of a broken image URL,
+    // so the tile falls through to its glyph placeholder without a load warning.
+    function appIconSource(iconName) {
+        if (iconName === "")
+            return "";
+
+        return Quickshell.iconPath(iconName, true);
+    }
+
+    function buildAppEntries() {
+        const entries = DesktopEntries.applications?.values ?? [];
+        const list = [];
+
+        for (let i = 0; i < entries.length; i += 1) {
+            const entry = entries[i];
+
+            if (!entry || entry.noDisplay)
+                continue;
+
+            list.push({
+                id: entry.id,
+                name: entry.name || entry.id,
+                iconSource: root.appIconSource(entry.icon || "")
+            });
+        }
+
+        list.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+        return list;
+    }
+
+    function filterAppEntries() {
+        const query = root.appsSearchDraft.trim().toLowerCase();
+
+        if (query === "")
+            return root.appEntries;
+
+        return root.appEntries.filter(entry => entry.name.toLowerCase().indexOf(query) !== -1 || entry.id.toLowerCase().indexOf(query) !== -1);
+    }
+
+    function findAppEntry(id) {
+        const entries = root.appEntries;
+
+        for (let i = 0; i < entries.length; i += 1) {
+            if (entries[i].id === id)
+                return entries[i];
+        }
+
+        return null;
+    }
+
+    // Pads the saved id list out to a fixed slot count so the grid always draws
+    // 4x2. Slots the user has not filled come back with `filled: false`.
+    function buildFavoriteEntries() {
+        const slots = [];
+        // Read up front rather than only inside the filled branch below. QML
+        // captures binding dependencies from the properties an evaluation
+        // actually touches, so with an empty dock this never looked at
+        // appEntries and the grid would not refresh when the desktop entries
+        // finished loading after favorites.json.
+        const entries = root.appEntries;
+
+        for (let i = 0; i < root.appsFavoriteSlots; i += 1) {
+            const id = root.favoriteAppIds[i];
+
+            if (!id) {
+                slots.push({
+                    filled: false,
+                    id: "",
+                    name: "",
+                    iconSource: ""
+                });
+                continue;
+            }
+
+            const entry = root.findAppEntry(id);
+
+            slots.push({
+                filled: true,
+                id: id,
+                name: entry ? entry.name : id,
+                iconSource: entry ? entry.iconSource : root.appIconSource("")
+            });
+        }
+
+        return slots;
+    }
+
+    function isFavoriteApp(id) {
+        return root.favoriteAppIds.indexOf(id) !== -1;
+    }
+
+    // Morphs the island into the favorites dock, or collapses it back to idle
+    // if it is already showing.
+    function toggleAppsPanel() {
+        if (root.mode === "apps") {
+            root.showIdle();
+            return;
+        }
+
+        collapseTimer.stop();
+        root.mode = "apps";
+        root.appsPickerOpen = false;
+        root.appsSearchDraft = "";
+        root.appsStatusText = "";
+    }
+
+    function toggleAppsPicker() {
+        root.appsPickerOpen = !root.appsPickerOpen;
+        root.appsSearchDraft = "";
+        root.appsStatusText = "";
+    }
+
+    function toggleFavoriteApp(id) {
+        if (id === "")
+            return;
+
+        const list = root.favoriteAppIds.slice();
+        const index = list.indexOf(id);
+
+        if (index !== -1) {
+            list.splice(index, 1);
+        } else if (list.length >= root.appsFavoriteSlots) {
+            root.appsStatusText = "All " + root.appsFavoriteSlots + " slots are full";
+            appsStatusTimer.restart();
+            return;
+        } else {
+            list.push(id);
+        }
+
+        root.appsStatusText = "";
+        root.favoriteAppIds = list;
+        root.saveFavorites();
+    }
+
+    function launchFavoriteApp(id) {
+        const entry = DesktopEntries.byId(id);
+
+        if (!entry)
+            return;
+
+        entry.execute();
+        root.showIdle();
+    }
+
+    // Enter in the search field launches whatever is at the top of the filtered
+    // list, so the picker doubles as a keyboard launcher.
+    function launchTopSearchMatch() {
+        const entries = root.appsPickerEntries;
+
+        if (root.appsSearchDraft.trim() === "" || entries.length === 0)
+            return;
+
+        root.launchFavoriteApp(entries[0].id);
+    }
+
+    function applyFavoritesJson(text) {
+        try {
+            const parsed = JSON.parse(text);
+
+            if (!Array.isArray(parsed))
+                return;
+
+            root.favoriteAppIds = parsed.filter(id => typeof id === "string" && id !== "").slice(0, root.appsFavoriteSlots);
+        } catch (error) {
+        // No saved favorites yet, or the file was hand-edited into something
+        // unparseable — either way, start from an empty dock.
+        }
+    }
+
+    function saveFavorites() {
+        favoritesFile.setText(JSON.stringify(root.favoriteAppIds));
+    }
+
     Timer {
         id: collapseTimer
         repeat: false
@@ -646,26 +1045,64 @@ Scope {
         onTriggered: root.primeLiveLinks()
     }
 
+    // Camera only. The microphone half of this poll used to shell out to
+    // `pactl list source-outputs` on the same tick, which is redundant —
+    // detectMicrophoneActivity() already derives that from the Pipewire graph
+    // for free, and microphoneActive ORs the two together anyway. Cameras still
+    // need the fallback because an app that opens /dev/video0 directly, rather
+    // than through the portal, never shows up as a Pipewire node.
     Timer {
-        interval: 1200
+        interval: 3000
         repeat: true
         running: root.liveLinksEnabled && !root.privacyDebugEnabled
         triggeredOnStart: true
         onTriggered: {
             if (!privacyPollProc.running)
-                privacyPollProc.exec(["sh", "-c", "mic=0; cam=0; if command -v pactl >/dev/null 2>&1; then [ -n \"$(pactl list source-outputs short 2>/dev/null)\" ] && mic=1; fi; if command -v fuser >/dev/null 2>&1; then for dev in /dev/video*; do [ -e \"$dev\" ] || continue; fuser \"$dev\" >/dev/null 2>&1 && cam=1; done; fi; printf '%s %s\\n' \"$mic\" \"$cam\""]);
+                privacyPollProc.exec(["sh", "-c", "cam=0; if command -v fuser >/dev/null 2>&1; then for dev in /dev/video*; do [ -e \"$dev\" ] || continue; fuser \"$dev\" >/dev/null 2>&1 && cam=1 && break; done; fi; printf '%s\\n' \"$cam\""]);
         }
     }
 
+    // Locating the backlight is a one-shot glob, not something to redo twice a
+    // second. Machines without one (desktops) leave backlightPath empty, which
+    // switches the poll below off entirely instead of forking a shell forever to
+    // compute a value that updatePolledBrightness discards.
+    Process {
+        id: backlightProbeProc
+
+        running: true
+        command: ["sh", "-c", "for dev in /sys/class/backlight/*; do [ -r \"$dev/brightness\" ] && [ -r \"$dev/max_brightness\" ] || continue; printf '%s\\n' \"$dev\"; break; done"]
+
+        stdout: StdioCollector {
+            onStreamFinished: root.backlightPath = text.trim()
+        }
+    }
+
+    // sysfs reads through FileView cost a read(2) each, with no process spawn.
     Timer {
         interval: 700
         repeat: true
-        running: root.liveLinksEnabled
+        running: root.liveLinksEnabled && root.backlightPath !== ""
         triggeredOnStart: true
         onTriggered: {
-            if (!brightnessPollProc.running)
-                brightnessPollProc.exec(["sh", "-c", "level=-1; for dev in /sys/class/backlight/*; do [ -r \"$dev/brightness\" ] && [ -r \"$dev/max_brightness\" ] || continue; b=$(cat \"$dev/brightness\" 2>/dev/null); m=$(cat \"$dev/max_brightness\" 2>/dev/null); [ \"$m\" -gt 0 ] 2>/dev/null || continue; level=$(( (b * 100 + m / 2) / m )); break; done; printf '%s\\n' \"$level\""]);
+            backlightMaxFile.reload();
+            backlightFile.reload();
         }
+    }
+
+    FileView {
+        id: backlightMaxFile
+
+        path: root.backlightPath === "" ? "" : root.backlightPath + "/max_brightness"
+        printErrors: false
+        onLoaded: root.backlightMaxRaw = Number(backlightMaxFile.text().trim())
+    }
+
+    FileView {
+        id: backlightFile
+
+        path: root.backlightPath === "" ? "" : root.backlightPath + "/brightness"
+        printErrors: false
+        onLoaded: root.updateRawBrightness(Number(backlightFile.text().trim()))
     }
 
     Process {
@@ -677,30 +1114,113 @@ Scope {
     }
 
     Process {
-        id: brightnessPollProc
+        id: btSettingsProc
+    }
+
+    Timer {
+        interval: 6000
+        repeat: true
+        running: root.mode === "wifi"
+        onTriggered: root.scanWifiNetworks()
+    }
+
+    Process {
+        id: wifiRadioStateProc
 
         stdout: StdioCollector {
-            onStreamFinished: root.updatePolledBrightness(text)
+            onStreamFinished: root.wifiRadioEnabled = text.trim() === "enabled"
         }
     }
 
     Process {
-        id: wifiSettingsProc
+        id: wifiScanProc
+
+        stdout: StdioCollector {
+            onStreamFinished: root.parseWifiNetworks(text)
+        }
     }
 
     Process {
-        id: btSettingsProc
+        id: wifiRadioToggleProc
+
+        onExited: root.scanWifiNetworks()
+    }
+
+    Process {
+        id: wifiConnectProc
+
+        stdinEnabled: true
+        onStarted: {
+            if (root.pendingWifiPassword !== "") {
+                wifiConnectProc.write(root.pendingWifiPassword + "\n");
+                root.pendingWifiPassword = "";
+                root.wifiPasswordDraft = "";
+            }
+        }
+        onExited: (exitCode, exitStatus) => {
+            root.wifiConnecting = false;
+            root.pendingWifiPassword = "";
+
+            if (exitCode === 0) {
+                root.wifiExpandedSsid = "";
+                root.wifiPasswordDraft = "";
+                root.wifiStatusText = "";
+            } else {
+                root.wifiStatusText = "Connection failed";
+            }
+
+            root.scanWifiNetworks();
+        }
+    }
+
+    Process {
+        id: wifiDisconnectProc
+
+        onExited: (exitCode, exitStatus) => {
+            root.wifiConnecting = false;
+
+            if (exitCode === 0) {
+                root.wifiExpandedSsid = "";
+                root.wifiStatusText = "";
+            } else {
+                root.wifiStatusText = "Disconnect failed";
+            }
+
+            root.scanWifiNetworks();
+        }
+    }
+
+    Timer {
+        id: appsStatusTimer
+
+        interval: 2400
+        repeat: false
+        onTriggered: root.appsStatusText = ""
+    }
+
+    // The shell state dir usually exists already, but setText() will not create it
+    // on a first run, so make sure of it before anything tries to save.
+    Process {
+        id: favoritesDirProc
+
+        running: true
+        command: ["mkdir", "-p", root.favoritesDir]
+    }
+
+    FileView {
+        id: favoritesFile
+
+        path: root.favoritesPath
+        preload: true
+        printErrors: false
+        onLoaded: root.applyFavoritesJson(favoritesFile.text())
     }
 
     Process {
         id: wifiPollProc
 
         stdout: StdioCollector {
-            onStreamFinished: {
-                const parts = text.trim().split("\t");
-                root.wifiSsid = parts[0] === "" || parts[0] === "--" ? "" : parts[0];
-                root.wifiSignal = parts.length > 1 ? parseInt(parts[1]) || 0 : 0;
-            }
+            onStreamFinished: root.parseActiveWifi(text)
         }
     }
 
@@ -723,7 +1243,7 @@ Scope {
         triggeredOnStart: true
         onTriggered: {
             if (!wifiPollProc.running)
-                wifiPollProc.exec(["sh", "-c", "nmcli -t -f active,ssid,signal dev wifi 2>/dev/null | grep '^yes:' | head -1 | awk -F: '{printf \"%s\\t%s\\n\", $2, $3}'"]);
+                wifiPollProc.exec(["nmcli", "-t", "-f", "active,ssid,signal", "dev", "wifi"]);
             if (!btPollProc.running)
                 btPollProc.exec(["sh", "-c", "dev=$(bluetoothctl devices Connected 2>/dev/null | head -1 | cut -d' ' -f3-); [ -z \"$dev\" ] && printf '\\t\\n' && exit 0; bat=$(bluetoothctl info 2>/dev/null | sed -n 's/.*Battery Percentage: 0x[0-9a-f]* (\\([0-9]*\\)).*/\\1/p'); printf '%s\\t%s\\n' \"$dev\" \"$bat\""]);
         }
@@ -779,6 +1299,11 @@ Scope {
         }
     }
 
+    onInteractionOpenChanged: {
+        if (root.interactionOpen)
+            root.prewarmWifiNetworks();
+    }
+
     onMediaAvailableChanged: {
         if (root.mediaAvailable)
             root.trayMediaDismissed = false;
@@ -791,11 +1316,21 @@ Scope {
         color: "transparent"
         exclusiveZone: root.reservedZone
         exclusionMode: ExclusionMode.Normal
-        implicitHeight: root.windowHeight
+        // Tall enough for the tallest expanded panel so the morph never clips.
+        // The surface is transparent and input is limited to `mask`, so the extra
+        // room costs nothing.
+        implicitHeight: Math.max(root.windowHeight, root.wifiMaxPanelHeight + 32, root.appsMaxPanelHeight + 32)
         visible: true
 
         WlrLayershell.namespace: "dynamic-glacier"
         WlrLayershell.layer: WlrLayer.Top
+        // Layer surfaces get no keyboard by default, so every TextInput in here
+        // was inert: forceActiveFocus() moved Qt's internal focus (which is why
+        // the field highlighted) but the compositor never routed a single key
+        // press to the surface. OnDemand hands us the keyboard while the pointer
+        // has clicked into the island and gives it straight back on click-away —
+        // Exclusive would hold it for as long as the bar is mapped, i.e. always.
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
 
         anchors {
             top: true
@@ -838,8 +1373,9 @@ Scope {
 
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: root.targetY()
-                width: root.targetWidth()
-                height: root.targetHeight()
+                targetW: root.targetWidth()
+                targetH: root.targetHeight()
+                wifiMaxPanelHeight: root.wifiMaxPanelHeight
                 mode: root.visualMode
                 handleStyle: root.handleStyle
                 forceExpanded: root.interactionOpen
@@ -850,7 +1386,7 @@ Scope {
                 artUrl: root.artUrl
                 volume: root.volume
                 muted: root.muted
-                volumeIndicatorVisible: root.volumeIndicatorVisible
+                volumeKind: root.volumeKind
                 playing: root.playing
                 canGoPrevious: root.mediaCanGoPrevious
                 canTogglePlaying: root.mediaCanTogglePlaying
@@ -877,6 +1413,20 @@ Scope {
                 btBattery: root.btBattery
                 timeText: root.hoverTimeText
                 dateText: root.hoverDateText
+                wifiRadioEnabled: root.wifiRadioEnabled
+                wifiNetworks: root.wifiNetworks
+                wifiExpandedSsid: root.wifiExpandedSsid
+                wifiPasswordDraft: root.wifiPasswordDraft
+                wifiStatusText: root.wifiStatusText
+                wifiConnecting: root.wifiConnecting
+                appsMaxPanelHeight: root.appsMaxPanelHeight
+                favoriteAppEntries: root.favoriteAppEntries
+                favoriteAppIds: root.favoriteAppIds
+                appsPickerEntries: root.appsPickerEntries
+                appsPickerOpen: root.appsPickerOpen
+                appsSearchDraft: root.appsSearchDraft
+                appsStatusText: root.appsStatusText
+                appsFavoriteSlots: root.appsFavoriteSlots
                 onPreviousRequested: root.mediaPrevious()
                 onPlayPauseRequested: root.mediaTogglePlaying()
                 onNextRequested: root.mediaNext()
@@ -887,8 +1437,21 @@ Scope {
                     root.mediaHoverSuppressed = true;
                     root.showIdle();
                 }
-                onWifiSettingsRequested: wifiSettingsProc.exec(["sh", "-c", "kitty --title 'WiFi Settings' nmtui-connect &"])
-                onBtSettingsRequested: btSettingsProc.exec(["sh", "-c", "bluedevil-wizard &"])
+                onWifiSettingsRequested: root.toggleWifiPanel()
+                onWifiCloseRequested: root.showIdle()
+                onWifiToggleRadioRequested: root.toggleWifiRadio()
+                onWifiRowRequested: ssid => root.requestWifiExpand(ssid)
+                onWifiConnectRequested: (ssid, secured) => root.connectToWifiNetwork(ssid, secured)
+                onWifiDisconnectRequested: ssid => root.disconnectFromWifiNetwork(ssid)
+                onWifiPasswordChanged: text => root.wifiPasswordDraft = text
+                onAppsSettingsRequested: root.toggleAppsPanel()
+                onAppsCloseRequested: root.showIdle()
+                onAppsPickerToggleRequested: root.toggleAppsPicker()
+                onAppsSearchChanged: text => root.appsSearchDraft = text
+                onAppsSearchAccepted: root.launchTopSearchMatch()
+                onAppsFavoriteToggleRequested: id => root.toggleFavoriteApp(id)
+                onAppsLaunchRequested: id => root.launchFavoriteApp(id)
+                onBtSettingsRequested: btSettingsProc.exec(["bluedevil-wizard"])
                 onSeekRequested: position => root.mediaSeek(position)
                 onHandleStyleRequested: style => root.setHandleStyle(style)
             }
@@ -1041,7 +1604,7 @@ Scope {
                 width: island.width
                 height: root.mode === "idle" && !root.interactionOpen ? Math.max(root.reservedZone, island.height) : island.height
                 hoverEnabled: true
-                acceptedButtons: root.visualMode === "media" || root.interactionOpen ? Qt.NoButton : Qt.LeftButton
+                acceptedButtons: root.visualMode === "media" || root.visualMode === "wifi" || root.visualMode === "apps" || root.interactionOpen ? Qt.NoButton : Qt.LeftButton
                 cursorShape: Qt.PointingHandCursor
                 onEntered: root.keepInteractionOpen(true)
                 onExited: {
@@ -1103,6 +1666,10 @@ Scope {
 
         function brightness(level: int): void {
             root.showBrightness(level);
+        }
+
+        function apps(): void {
+            root.toggleAppsPanel();
         }
 
         function demo(): void {

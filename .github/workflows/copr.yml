@@ -1,0 +1,73 @@
+name: Update COPR
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "rpm/dynamic-glacier.spec"
+      - "quickshell/**"
+      - ".github/workflows/copr.yml"
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - "rpm/dynamic-glacier.spec"
+      - "quickshell/**"
+      - ".github/workflows/copr.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: copr-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+
+jobs:
+  copr-publish:
+    name: RPM source package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: fedora:44
+    steps:
+      - name: Install build tooling
+        run: dnf install -y rpm-build rpmdevtools copr-cli git
+
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Stamp the source revision
+        run: |
+          set -eu
+          cd "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          commit_date="$(git show -s --format=%cd --date=format:%Y%m%d%H%M%S "$GITHUB_SHA")"
+          short_commit="$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
+          sed -i \
+            -e "s/^%global commit .*/%global commit     $GITHUB_SHA/" \
+            -e "s/^%global shortcommit .*/%global shortcommit $short_commit/" \
+            -e "s/^%global commitdate .*/%global commitdate  $commit_date/" \
+            rpm/dynamic-glacier.spec
+
+      - name: Build the source RPM
+        run: |
+          set -eu
+          cd "$GITHUB_WORKSPACE"
+          rpmdev-setuptree
+          spectool -g -R rpm/dynamic-glacier.spec
+          rpmbuild -bs rpm/dynamic-glacier.spec
+
+      - name: Submit to COPR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.COPR_PROJECT != ''
+        env:
+          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+          COPR_PROJECT: ${{ vars.COPR_PROJECT }}
+        run: |
+          set -eu
+          test -n "$COPR_CONFIG"
+          mkdir -p ~/.config
+          printf '%s\n' "$COPR_CONFIG" > ~/.config/copr
+          chmod 600 ~/.config/copr
+          copr-cli build --nowait "$COPR_PROJECT" ~/rpmbuild/SRPMS/*.src.rpm

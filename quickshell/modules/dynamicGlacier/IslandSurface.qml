@@ -13,7 +13,7 @@ Item {
     property string artUrl: ""
     property int volume: 0
     property bool muted: false
-    property bool volumeIndicatorVisible: false
+    property string volumeKind: "audio"
     property bool playing: false
     property bool canGoPrevious: false
     property bool canTogglePlaying: false
@@ -42,10 +42,54 @@ Item {
     property string timeText: ""
     property string dateText: ""
     property string fontFamily: "Noto Sans"
+
+    // Geometry the shell asks for. The surface owns the actual width/height so the
+    // morph between shapes can be expressed as States + Transitions.
+    property real targetW: 0
+    property real targetH: 0
+    property int wifiMaxPanelHeight: 420
+    property int appsMaxPanelHeight: 470
+
+    // 0 = island, 1 = Wi-Fi manager. Animated by the morph transition and shared
+    // with the content layer so shape and contents move as one.
+    property real wifiMorph: 0
+    readonly property real wifiPanelHeight: islandContent.wifiContentHeight
+
+    // Same idea for the favorites dock. Only one of the two morphs is ever
+    // non-zero, since the island can only be in one panel mode at a time.
+    property real appsMorph: 0
+    readonly property real appsPanelHeight: islandContent.appsContentHeight
+
+    // 0 = island, 1 = volume HUD. Same mechanism as the two panels above, so the
+    // pill grows out of the handle instead of being painted on top of it.
+    property real volumeMorph: 0
+
     readonly property bool expanded: mode !== "idle" || forceExpanded
-    readonly property real bottomRadius: Math.max(1, Math.min(height / 2, expanded ? Math.min(height * 0.28, 24) : Math.min(height * 0.42, 8)))
+    // The volume pill rounds all the way to a capsule as it morphs in; every other
+    // expanded shape keeps the softer island corner.
+    readonly property real expandedBottomRadius: {
+        const islandRadius = Math.min(height * 0.28, 24);
+
+        return islandRadius + (height / 2 - islandRadius) * root.volumeMorph;
+    }
+    readonly property real bottomRadius: Math.max(1, Math.min(height / 2, expanded ? expandedBottomRadius : Math.min(height * 0.42, 8)))
     readonly property color surfaceColor: !expanded && handleStyle === "strip" ? "#0c0c0c" : "#000000"
     readonly property real antiCornerRadius: root.expanded || handleStyle === "strip" ? Math.min(3, height * 0.6) : Math.min(2.5, height * 0.12)
+
+    property bool wifiRadioEnabled: true
+    property var wifiNetworks: []
+    property string wifiExpandedSsid: ""
+    property string wifiPasswordDraft: ""
+    property string wifiStatusText: ""
+    property bool wifiConnecting: false
+
+    property var favoriteAppEntries: []
+    property var favoriteAppIds: []
+    property var appsPickerEntries: []
+    property bool appsPickerOpen: false
+    property string appsSearchDraft: ""
+    property string appsStatusText: ""
+    property int appsFavoriteSlots: 8
 
     signal previousRequested
     signal playPauseRequested
@@ -55,6 +99,19 @@ Item {
     signal favoriteRequested
     signal dismissRequested
     signal wifiSettingsRequested
+    signal wifiCloseRequested
+    signal wifiToggleRadioRequested
+    signal wifiRowRequested(string ssid)
+    signal wifiConnectRequested(string ssid, bool secured)
+    signal wifiDisconnectRequested(string ssid)
+    signal wifiPasswordChanged(string text)
+    signal appsSettingsRequested
+    signal appsCloseRequested
+    signal appsPickerToggleRequested
+    signal appsSearchChanged(string text)
+    signal appsSearchAccepted
+    signal appsFavoriteToggleRequested(string id)
+    signal appsLaunchRequested(string id)
     signal btSettingsRequested
     signal seekRequested(real position)
     signal handleStyleRequested(string style)
@@ -256,152 +313,19 @@ Item {
             opacity: 0
         }
 
-        Canvas {
-            id: volumeTrace
-
-            z: 8
-            anchors.fill: parent
-            opacity: root.volumeIndicatorVisible ? 1 : 0
-
-            function perimeterPoints() {
-                const inset = Math.max(1.5, Math.min(4, height * 0.22, width * 0.08));
-                const left = inset;
-                const right = Math.max(left + 1, width - inset);
-                const openTop = Math.min(height - inset - 1, Math.max(inset + 1, height * 0.18));
-                const bottom = Math.max(openTop + 1, height - inset);
-                const radius = Math.max(0, Math.min(root.bottomRadius - inset, (right - left) / 2));
-                const arcSteps = 10;
-                const points = [
-                    {
-                        x: left,
-                        y: openTop
-                    },
-                    {
-                        x: left,
-                        y: bottom - radius
-                    }
-                ];
-
-                for (let i = 0; i <= arcSteps; i += 1) {
-                    const angle = Math.PI - i / arcSteps * Math.PI / 2;
-                    points.push({
-                        x: left + radius + Math.cos(angle) * radius,
-                        y: bottom - radius + Math.sin(angle) * radius
-                    });
-                }
-
-                points.push({
-                    x: right - radius,
-                    y: bottom
-                });
-
-                for (let i = 0; i <= arcSteps; i += 1) {
-                    const angle = Math.PI / 2 - i / arcSteps * Math.PI / 2;
-                    points.push({
-                        x: right - radius + Math.cos(angle) * radius,
-                        y: bottom - radius + Math.sin(angle) * radius
-                    });
-                }
-
-                points.push({
-                    x: right,
-                    y: openTop
-                });
-                return points;
-            }
-
-            function distance(a, b) {
-                const dx = b.x - a.x;
-                const dy = b.y - a.y;
-
-                return Math.sqrt(dx * dx + dy * dy);
-            }
-
-            function tracePath(ctx, progress) {
-                const points = perimeterPoints();
-                let total = 0;
-
-                for (let i = 1; i < points.length; i += 1)
-                    total += distance(points[i - 1], points[i]);
-
-                ctx.beginPath();
-                ctx.moveTo(points[0].x, points[0].y);
-
-                if (total <= 0 || progress <= 0)
-                    return;
-
-                const target = total * Math.max(0, Math.min(1, progress));
-                let walked = 0;
-
-                for (let i = 1; i < points.length; i += 1) {
-                    const previous = points[i - 1];
-                    const current = points[i];
-                    const segment = distance(previous, current);
-
-                    if (walked + segment >= target) {
-                        const t = segment === 0 ? 0 : (target - walked) / segment;
-
-                        ctx.lineTo(previous.x + (current.x - previous.x) * t, previous.y + (current.y - previous.y) * t);
-                        return;
-                    }
-
-                    ctx.lineTo(current.x, current.y);
-                    walked += segment;
-                }
-            }
-
-            onPaint: {
-                const ctx = getContext("2d");
-                const progress = root.muted ? 0 : Math.max(0, Math.min(1, root.volume / 100));
-
-                ctx.reset();
-                ctx.clearRect(0, 0, width, height);
-                ctx.lineWidth = 2;
-                ctx.lineCap = "round";
-                ctx.lineJoin = "round";
-
-                ctx.strokeStyle = "rgba(190, 190, 190, 0.22)";
-                tracePath(ctx, 1);
-                ctx.stroke();
-
-                if (progress > 0) {
-                    ctx.strokeStyle = "rgba(245, 245, 245, 0.92)";
-                    tracePath(ctx, progress);
-                    ctx.stroke();
-                }
-            }
-
-            Behavior on opacity {
-                NumberAnimation {
-                    duration: 160
-                    easing.type: Easing.OutCubic
-                }
-            }
-
-            onWidthChanged: requestPaint()
-            onHeightChanged: requestPaint()
-            onVisibleChanged: requestPaint()
-            Connections {
-                target: root
-
-                function onVolumeChanged() {
-                    volumeTrace.requestPaint();
-                }
-
-                function onMutedChanged() {
-                    volumeTrace.requestPaint();
-                }
-
-                function onVolumeIndicatorVisibleChanged() {
-                    volumeTrace.requestPaint();
-                }
-            }
-        }
-
         IslandContent {
+            id: islandContent
+
             z: 10
             anchors.fill: parent
-            anchors.margins: root.expanded ? (root.mode === "media" ? 10 : 12) : 0
+            // Padding relaxes to zero as a panel takes over — panels bring their own.
+            anchors.margins: root.expanded ? (root.mode === "media" ? 10 : 12) * (1 - root.wifiMorph) * (1 - root.appsMorph) * (1 - root.volumeMorph) : 0
+            wifiMorph: root.wifiMorph
+            wifiMaxPanelHeight: root.wifiMaxPanelHeight
+            appsMorph: root.appsMorph
+            appsMaxPanelHeight: root.appsMaxPanelHeight
+            volumeMorph: root.volumeMorph
+            volumeKind: root.volumeKind
             mode: root.mode
             handleStyle: root.handleStyle
             forceExpanded: root.forceExpanded
@@ -438,6 +362,19 @@ Item {
             btBattery: root.btBattery
             timeText: root.timeText
             dateText: root.dateText
+            wifiRadioEnabled: root.wifiRadioEnabled
+            wifiNetworks: root.wifiNetworks
+            wifiExpandedSsid: root.wifiExpandedSsid
+            wifiPasswordDraft: root.wifiPasswordDraft
+            wifiStatusText: root.wifiStatusText
+            wifiConnecting: root.wifiConnecting
+            favoriteAppEntries: root.favoriteAppEntries
+            favoriteAppIds: root.favoriteAppIds
+            appsPickerEntries: root.appsPickerEntries
+            appsPickerOpen: root.appsPickerOpen
+            appsSearchDraft: root.appsSearchDraft
+            appsStatusText: root.appsStatusText
+            appsFavoriteSlots: root.appsFavoriteSlots
             onPreviousRequested: root.previousRequested()
             onPlayPauseRequested: root.playPauseRequested()
             onNextRequested: root.nextRequested()
@@ -446,12 +383,237 @@ Item {
             onFavoriteRequested: root.favoriteRequested()
             onDismissRequested: root.dismissRequested()
             onWifiSettingsRequested: root.wifiSettingsRequested()
+            onWifiCloseRequested: root.wifiCloseRequested()
+            onWifiToggleRadioRequested: root.wifiToggleRadioRequested()
+            onWifiRowRequested: ssid => root.wifiRowRequested(ssid)
+            onWifiConnectRequested: (ssid, secured) => root.wifiConnectRequested(ssid, secured)
+            onWifiDisconnectRequested: ssid => root.wifiDisconnectRequested(ssid)
+            onWifiPasswordChanged: text => root.wifiPasswordChanged(text)
+            onAppsSettingsRequested: root.appsSettingsRequested()
+            onAppsCloseRequested: root.appsCloseRequested()
+            onAppsPickerToggleRequested: root.appsPickerToggleRequested()
+            onAppsSearchChanged: text => root.appsSearchChanged(text)
+            onAppsSearchAccepted: root.appsSearchAccepted()
+            onAppsFavoriteToggleRequested: id => root.appsFavoriteToggleRequested(id)
+            onAppsLaunchRequested: id => root.appsLaunchRequested(id)
             onBtSettingsRequested: root.btSettingsRequested()
             onSeekRequested: position => root.seekRequested(position)
             onHandleStyleRequested: style => root.handleStyleRequested(style)
         }
     }
 
+    // Height is a plain binding, not part of the state, so it can re-target while
+    // the morph is still running — the network list usually lands mid-transition,
+    // and the app picker drawer opens long after the morph has settled.
+    height: root.mode === "wifi" ? Math.max(root.targetH, root.wifiPanelHeight) : (root.mode === "apps" ? Math.max(root.targetH, root.appsPanelHeight) : root.targetH)
+
+    state: root.mode !== "idle" ? root.mode : (root.forceExpanded ? "peek" : "collapsed")
+
+    states: [
+        State {
+            name: "collapsed"
+
+            PropertyChanges {
+                root.width: root.targetW
+                root.wifiMorph: 0
+                root.appsMorph: 0
+                root.volumeMorph: 0
+            }
+        },
+        State {
+            name: "peek"
+
+            PropertyChanges {
+                root.width: root.targetW
+                root.wifiMorph: 0
+                root.appsMorph: 0
+                root.volumeMorph: 0
+            }
+        },
+        State {
+            name: "notify"
+
+            PropertyChanges {
+                root.width: root.targetW
+                root.wifiMorph: 0
+                root.appsMorph: 0
+                root.volumeMorph: 0
+            }
+        },
+        State {
+            name: "media"
+
+            PropertyChanges {
+                root.width: root.targetW
+                root.wifiMorph: 0
+                root.appsMorph: 0
+                root.volumeMorph: 0
+            }
+        },
+        State {
+            name: "volume"
+
+            PropertyChanges {
+                root.width: root.targetW
+                root.wifiMorph: 0
+                root.appsMorph: 0
+                root.volumeMorph: 1
+            }
+        },
+        State {
+            name: "wifi"
+
+            PropertyChanges {
+                root.width: root.targetW
+                root.wifiMorph: 1
+                root.appsMorph: 0
+                root.volumeMorph: 0
+            }
+        },
+        State {
+            name: "apps"
+
+            PropertyChanges {
+                root.width: root.targetW
+                root.wifiMorph: 0
+                root.appsMorph: 1
+                root.volumeMorph: 0
+            }
+        }
+    ]
+
+    transitions: [
+        // Morph into the Wi-Fi manager: the shape widens first, then unfolds
+        // downward with a slight overshoot while the contents cross-fade.
+        Transition {
+            to: "wifi"
+
+            ParallelAnimation {
+                NumberAnimation {
+                    property: "width"
+                    duration: 340
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 0.7
+                }
+
+                NumberAnimation {
+                    property: "wifiMorph"
+                    duration: 440
+                    easing.type: Easing.OutCubic
+                }
+            }
+        },
+        // Morph back: fold the height away first, then settle the width.
+        Transition {
+            from: "wifi"
+
+            ParallelAnimation {
+                NumberAnimation {
+                    property: "width"
+                    duration: 300
+                    easing.type: Easing.InOutCubic
+                }
+
+                NumberAnimation {
+                    property: "wifiMorph"
+                    duration: 260
+                    easing.type: Easing.OutCubic
+                }
+            }
+        },
+        // Morph into the favorites dock. Same choreography as Wi-Fi so the two
+        // panels feel like the same gesture: widen with a small overshoot while
+        // the grid unfolds and the peek cross-fades out.
+        Transition {
+            to: "apps"
+
+            ParallelAnimation {
+                NumberAnimation {
+                    property: "width"
+                    duration: 340
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 0.7
+                }
+
+                NumberAnimation {
+                    property: "appsMorph"
+                    duration: 440
+                    easing.type: Easing.OutCubic
+                }
+            }
+        },
+        Transition {
+            from: "apps"
+
+            ParallelAnimation {
+                NumberAnimation {
+                    property: "width"
+                    duration: 300
+                    easing.type: Easing.InOutCubic
+                }
+
+                NumberAnimation {
+                    property: "appsMorph"
+                    duration: 260
+                    easing.type: Easing.OutCubic
+                }
+            }
+        },
+        // Volume HUD: the handle springs out sideways and the bar is already
+        // there by the time the width settles, so the pill reads as one gesture
+        // rather than a shape that fills in afterwards.
+        Transition {
+            to: "volume"
+
+            ParallelAnimation {
+                NumberAnimation {
+                    property: "width"
+                    duration: 400
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 0.9
+                }
+
+                NumberAnimation {
+                    property: "volumeMorph"
+                    duration: 260
+                    easing.type: Easing.OutCubic
+                }
+            }
+        },
+        Transition {
+            from: "volume"
+
+            ParallelAnimation {
+                NumberAnimation {
+                    property: "width"
+                    duration: 300
+                    easing.type: Easing.InOutCubic
+                }
+
+                NumberAnimation {
+                    property: "volumeMorph"
+                    duration: 180
+                    easing.type: Easing.OutCubic
+                }
+            }
+        },
+        Transition {
+            NumberAnimation {
+                property: "width"
+                duration: 360
+                easing.type: Easing.OutCubic
+            }
+
+            NumberAnimation {
+                properties: "wifiMorph,appsMorph,volumeMorph"
+                duration: 200
+                easing.type: Easing.OutCubic
+            }
+        }
+    ]
+
+    // Height is never animated by a transition, so this Behavior owns every height
+    // change: the morph itself, networks arriving, and rows expanding.
     Behavior on width {
         NumberAnimation {
             duration: 360
@@ -461,8 +623,11 @@ Item {
 
     Behavior on height {
         NumberAnimation {
-            duration: 360
-            easing.type: Easing.OutCubic
+            duration: 300
+            // Only the volume pill drops in with a bounce; panels stay damped so a
+            // network list arriving mid-morph doesn't wobble the whole surface.
+            easing.type: root.mode === "volume" ? Easing.OutBack : Easing.OutCubic
+            easing.overshoot: 0.9
         }
     }
 

@@ -30,6 +30,53 @@ exec-once = dynamic-glacier
 </details>
 
 <details>
+<summary><b>Fedora / COPR</b></summary>
+
+The RPM package and COPR publishing workflow are being prepared. The public
+`mavxa/dynamic-glacier` COPR is not live yet, so do not enable it until this
+section links to the real project. For now, use the manual installer below or
+build the RPM locally.
+
+On older Fedora releases without a `quickshell` package, enable the Quickshell COPR first:
+
+```sh
+sudo dnf copr enable errornointernet/quickshell
+```
+
+Hyprland itself is not in the Fedora repositories, so it is only a weak dependency here. Install it from a COPR such as [`sachesi/hyprland`](https://copr.fedorainfracloud.org/coprs/sachesi/hyprland/) if you do not have it yet.
+
+Run it:
+
+```sh
+dynamic-glacier
+```
+
+The packaged launcher registers autostart on first run: it appends `exec-once = dynamic-glacier` to `~/.config/hypr/custom/execs.conf` when that file exists (end-4 dots layout), otherwise to `~/.config/hypr/hyprland.conf`. It only does this once, tracked by `~/.local/state/dynamic-glacier/autostart-done`.
+
+Material Symbols has no Fedora package, and the media controls use it for icons. Install the variable font per-user:
+
+```sh
+mkdir -p ~/.local/share/fonts
+curl -Lo ~/.local/share/fonts/MaterialSymbolsRounded.ttf \
+  https://github.com/google/material-design-icons/raw/master/variablefont/MaterialSymbolsRounded%5BFILL%2CGRAD%2Copsz%2Cwght%5D.ttf
+fc-cache -f
+```
+
+To build the RPM yourself instead:
+
+```sh
+sudo dnf install rpm-build rpmdevtools
+rpmdev-setuptree
+spectool -g -R rpm/dynamic-glacier.spec
+rpmbuild -bb rpm/dynamic-glacier.spec
+```
+
+The CI workflow always validates the source RPM. Publishing remains disabled
+until the repository variable `COPR_PROJECT` and secret `COPR_CONFIG` are set.
+
+</details>
+
+<details>
 <summary><b>Manual install</b></summary>
 
 Clone the repository:
@@ -47,11 +94,11 @@ bash install.sh
 
 The installer:
 
-- installs runtime dependencies on supported distros
+- installs runtime dependencies on Arch (`pacman` + AUR helper), Fedora (`dnf` + Quickshell COPR), and Debian/Ubuntu (`apt`)
 - refreshes the font cache so `Noto Sans` is available
 - installs the config into `~/.config/quickshell/DynamicGlacier`
 - installs a launcher into `~/.local/bin/dynamic-glacier`
-- registers `exec-once = ~/.local/bin/dynamic-glacier` in `~/.config/hypr/hyprland.conf` when that file exists
+- registers `exec-once = ~/.local/bin/dynamic-glacier` in `~/.config/hypr/custom/execs.conf` when that file exists (end-4 dots layout), otherwise in `~/.config/hypr/hyprland.conf`
 
 Useful installer options:
 
@@ -78,6 +125,14 @@ For the AUR package:
 ```sh
 paru -Rns dynamic-glacier-git
 ```
+
+For the Fedora package:
+
+```sh
+sudo dnf remove dynamic-glacier
+```
+
+Packaged installs leave the `exec-once = dynamic-glacier` line in your Hyprland config; remove it by hand.
 
 For a manual install:
 
@@ -162,11 +217,11 @@ Colors are defined inline in `IslandSurface.qml` and `IslandContent.qml`:
 - `microphoneIndicatorColor`: mic privacy dot (`#ff9f1a`)
 - `cameraIndicatorColor`: camera privacy dot (`#35ff72`)
 
-To change the WiFi/BT settings apps, edit these lines in `DynamicGlacier.qml`:
+Wi-Fi management is built into the island and uses `nmcli`. To change the
+external Bluetooth settings app, edit this handler in `DynamicGlacier.qml`:
 
 ```qml
-onWifiSettingsRequested: wifiSettingsProc.exec(["sh", "-c", "kitty --title 'WiFi Settings' nmtui-connect &"])
-onBtSettingsRequested: btSettingsProc.exec(["sh", "-c", "bluedevil-wizard &"])
+onBtSettingsRequested: btSettingsProc.exec(["bluedevil-wizard"])
 ```
 
 </details>
@@ -243,7 +298,7 @@ Run doctor mode:
 bash install.sh --doctor
 ```
 
-It checks `quickshell`, the installed config, launcher, `Noto Sans`, helper commands (`playerctl`, `upower`, `pactl`, `fuser`), and whether the Hyprland autostart entry is present.
+It checks `quickshell`, the installed config, launcher, `Noto Sans`, `Material Symbols`, helper commands (`playerctl`, `upower`, `pactl`, `fuser`), and whether the Hyprland autostart entry is present.
 
 </details>
 
@@ -253,6 +308,7 @@ It checks `quickshell`, the installed config, launcher, `Noto Sans`, helper comm
 <summary><b>Links</b></summary>
 
 - AUR package: https://aur.archlinux.org/packages/dynamic-glacier-git
+- Quickshell COPR: https://copr.fedorainfracloud.org/coprs/errornointernet/quickshell/
 - end-4 dots: https://github.com/end-4/dots-hyprland
 - Quickshell docs: https://quickshell.outfoxxed.me/docs/
 - Quickshell install/setup: https://quickshell.outfoxxed.me/docs/guide/install-setup/
