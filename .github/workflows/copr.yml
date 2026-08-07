@@ -9,10 +9,6 @@ on:
       - ".github/workflows/copr.yml"
   pull_request:
     branches: [main, dev]
-    paths:
-      - "rpm/dynamic-glacier.spec"
-      - "quickshell/**"
-      - ".github/workflows/copr.yml"
   workflow_dispatch:
 
 permissions:
