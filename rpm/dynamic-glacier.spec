@@ -1,20 +1,21 @@
-# Snapshot package built from the tip of main, mirroring the AUR -git package.
-# Bump snapdate on every rebuild so upgrades sort correctly.
-%global snapdate 20260803
-%global branch   main
-%global archive  DynamicGlacier-%{branch}
+# The COPR workflow stamps these values from the exact Git revision being built.
+# Keeping a concrete fallback also makes the checked-in spec reproducible by hand.
+%global commit     d3487f52f64fb97abf016c1834975be37a3cb9c6
+%global shortcommit d3487f5
+%global commitdate  20260526000000
+%global archive     DynamicGlacier-%{commit}
 
 # The QML tree is data, not compiled code.
 %global debug_package %{nil}
 
 Name:           dynamic-glacier
 Version:        0
-Release:        0.%{snapdate}%{?dist}
+Release:        0.%{commitdate}.%{shortcommit}%{?dist}
 Summary:        Dynamic-island style widget for Hyprland, built with QML + Quickshell
 
 License:        MIT
 URL:            https://github.com/mavxa/DynamicGlacier
-Source0:        %{url}/archive/refs/heads/%{branch}.tar.gz#/%{name}-%{snapdate}.tar.gz
+Source0:        %{url}/archive/%{commit}.tar.gz#/%{name}-%{commit}.tar.gz
 
 BuildArch:      noarch
 
@@ -32,10 +33,6 @@ Requires:       NetworkManager-tui
 Requires:       bluez
 Requires:       fontconfig
 Requires:       google-noto-sans-fonts
-
-# Hyprland is not in the Fedora repositories (COPR only, e.g. sachesi/hyprland),
-# so it stays a weak dependency to keep this package installable on stock Fedora.
-Recommends:     hyprland
 
 # Material Symbols has no Fedora package; the widget falls back to blank icon
 # glyphs without it. See README.md for the manual font install.
@@ -96,5 +93,5 @@ chmod 755 %{buildroot}%{_bindir}/%{name}
 %{_datadir}/%{name}/
 
 %changelog
-* Mon Aug 03 2026 mavxa <mafvacurse@gmail.com> - 0-0.20260803
+* Mon Aug 03 2026 mavxa <mafvacurse@gmail.com> - 0-0.20260803.d3487f5
 - Initial Fedora/COPR snapshot package

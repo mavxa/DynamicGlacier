@@ -32,12 +32,10 @@ exec-once = dynamic-glacier
 <details>
 <summary><b>Fedora / COPR</b></summary>
 
-Quickshell is in the Fedora repositories (Fedora 44 ships 0.2.1), so only this project's COPR is needed:
-
-```sh
-sudo dnf copr enable mavxa/dynamic-glacier
-sudo dnf install dynamic-glacier
-```
+The RPM package and COPR publishing workflow are being prepared. The public
+`mavxa/dynamic-glacier` COPR is not live yet, so do not enable it until this
+section links to the real project. For now, use the manual installer below or
+build the RPM locally.
 
 On older Fedora releases without a `quickshell` package, enable the Quickshell COPR first:
 
@@ -72,6 +70,9 @@ rpmdev-setuptree
 spectool -g -R rpm/dynamic-glacier.spec
 rpmbuild -bb rpm/dynamic-glacier.spec
 ```
+
+The CI workflow always validates the source RPM. Publishing remains disabled
+until the repository variable `COPR_PROJECT` and secret `COPR_CONFIG` are set.
 
 </details>
 
@@ -216,11 +217,11 @@ Colors are defined inline in `IslandSurface.qml` and `IslandContent.qml`:
 - `microphoneIndicatorColor`: mic privacy dot (`#ff9f1a`)
 - `cameraIndicatorColor`: camera privacy dot (`#35ff72`)
 
-To change the WiFi/BT settings apps, edit these lines in `DynamicGlacier.qml`:
+Wi-Fi management is built into the island and uses `nmcli`. To change the
+external Bluetooth settings app, edit this handler in `DynamicGlacier.qml`:
 
 ```qml
-onWifiSettingsRequested: wifiSettingsProc.exec(["sh", "-c", "kitty --title 'WiFi Settings' nmtui-connect &"])
-onBtSettingsRequested: btSettingsProc.exec(["sh", "-c", "bluedevil-wizard &"])
+onBtSettingsRequested: btSettingsProc.exec(["bluedevil-wizard"])
 ```
 
 </details>
@@ -307,7 +308,6 @@ It checks `quickshell`, the installed config, launcher, `Noto Sans`, `Material S
 <summary><b>Links</b></summary>
 
 - AUR package: https://aur.archlinux.org/packages/dynamic-glacier-git
-- Fedora COPR: https://copr.fedorainfracloud.org/coprs/mavxa/dynamic-glacier/
 - Quickshell COPR: https://copr.fedorainfracloud.org/coprs/errornointernet/quickshell/
 - end-4 dots: https://github.com/end-4/dots-hyprland
 - Quickshell docs: https://quickshell.outfoxxed.me/docs/

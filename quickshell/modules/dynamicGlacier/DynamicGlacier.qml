@@ -115,6 +115,7 @@ Scope {
     property var wifiNetworks: []
     property string wifiExpandedSsid: ""
     property string wifiPasswordDraft: ""
+    property string pendingWifiPassword: ""
     property string wifiStatusText: ""
     property bool wifiConnecting: false
     property double lastWifiScanAt: 0
@@ -128,6 +129,7 @@ Scope {
     // App favorites dock (morphs the island into mode "apps")
     readonly property int appsFavoriteSlots: 8
     readonly property string favoritesPath: Quickshell.statePath("favorites.json")
+    readonly property string favoritesDir: root.parentDirectory(root.favoritesPath)
     property var favoriteAppIds: []
     property bool appsPickerOpen: false
     property string appsSearchDraft: ""
@@ -666,12 +668,12 @@ Scope {
     }
 
     function refreshWifiRadioState() {
-        wifiRadioStateProc.exec(["sh", "-c", "nmcli -t -f WIFI radio"]);
+        wifiRadioStateProc.exec(["nmcli", "-t", "-f", "WIFI", "radio"]);
     }
 
     function scanWifiNetworks() {
         root.lastWifiScanAt = Date.now();
-        wifiScanProc.exec(["sh", "-c", "nmcli -t -f active,ssid,signal,security dev wifi list --rescan yes 2>/dev/null"]);
+        wifiScanProc.exec(["nmcli", "-t", "-f", "active,ssid,signal,security", "dev", "wifi", "list", "--rescan", "yes"]);
     }
 
     // Warms the network list while the island is merely open, so the Wi-Fi panel
@@ -750,7 +752,7 @@ Scope {
         const nextState = !root.wifiRadioEnabled;
 
         root.wifiRadioEnabled = nextState;
-        wifiRadioToggleProc.exec(["sh", "-c", "nmcli radio wifi " + (nextState ? "on" : "off")]);
+        wifiRadioToggleProc.exec(["nmcli", "radio", "wifi", nextState ? "on" : "off"]);
     }
 
     function requestWifiExpand(ssid) {
@@ -760,24 +762,59 @@ Scope {
     }
 
     function connectToWifiNetwork(ssid, secured) {
+        if (secured && root.wifiPasswordDraft === "") {
+            root.wifiStatusText = "Password required";
+            return;
+        }
+
         root.wifiConnecting = true;
         root.wifiStatusText = "";
 
-        const escapedSsid = ssid.replace(/"/g, "\\\"");
+        const command = ["nmcli"];
 
         if (secured) {
-            const escapedPassword = root.wifiPasswordDraft.replace(/"/g, "\\\"");
-            wifiConnectProc.exec(["sh", "-c", "nmcli dev wifi connect \"" + escapedSsid + "\" password \"" + escapedPassword + "\" 2>&1"]);
-        } else {
-            wifiConnectProc.exec(["sh", "-c", "nmcli dev wifi connect \"" + escapedSsid + "\" 2>&1"]);
+            root.pendingWifiPassword = root.wifiPasswordDraft;
+            command.push("--ask");
         }
+
+        command.push("dev", "wifi", "connect", ssid);
+
+        // Process executes this list directly, so SSIDs and passwords never pass
+        // through a shell. Secured networks receive the password over stdin, which
+        // also keeps it out of the process list.
+        wifiConnectProc.exec(command);
     }
 
     function disconnectFromWifiNetwork(ssid) {
         root.wifiConnecting = true;
+        root.wifiStatusText = "";
+        wifiDisconnectProc.exec(["nmcli", "con", "down", "id", ssid]);
+    }
 
-        const escapedSsid = ssid.replace(/"/g, "\\\"");
-        wifiDisconnectProc.exec(["sh", "-c", "nmcli con down id \"" + escapedSsid + "\" 2>&1"]);
+    function parseActiveWifi(text) {
+        const lines = text.split("\n");
+
+        for (let i = 0; i < lines.length; i += 1) {
+            if (lines[i] === "")
+                continue;
+
+            const parts = root.splitNmcliLine(lines[i]);
+
+            if (parts.length >= 3 && parts[0] === "yes") {
+                root.wifiSsid = parts[1] === "--" ? "" : parts[1];
+                root.wifiSignal = parseInt(parts[2]) || 0;
+                return;
+            }
+        }
+
+        root.wifiSsid = "";
+        root.wifiSignal = 0;
+    }
+
+    function parentDirectory(path) {
+        const separator = path.lastIndexOf("/");
+
+        return separator > 0 ? path.slice(0, separator) : ".";
     }
 
     // `check` makes a missing icon resolve to "" instead of a broken image URL,
@@ -1112,32 +1149,44 @@ Scope {
     Process {
         id: wifiConnectProc
 
-        stdout: StdioCollector {
-            onStreamFinished: {
-                root.wifiConnecting = false;
-
-                if (text.toLowerCase().indexOf("error") !== -1) {
-                    root.wifiStatusText = "Connection failed";
-                } else {
-                    root.wifiExpandedSsid = "";
-                    root.wifiPasswordDraft = "";
-                    root.wifiStatusText = "";
-                }
-
-                root.scanWifiNetworks();
+        stdinEnabled: true
+        onStarted: {
+            if (root.pendingWifiPassword !== "") {
+                wifiConnectProc.write(root.pendingWifiPassword + "\n");
+                root.pendingWifiPassword = "";
+                root.wifiPasswordDraft = "";
             }
+        }
+        onExited: (exitCode, exitStatus) => {
+            root.wifiConnecting = false;
+            root.pendingWifiPassword = "";
+
+            if (exitCode === 0) {
+                root.wifiExpandedSsid = "";
+                root.wifiPasswordDraft = "";
+                root.wifiStatusText = "";
+            } else {
+                root.wifiStatusText = "Connection failed";
+            }
+
+            root.scanWifiNetworks();
         }
     }
 
     Process {
         id: wifiDisconnectProc
 
-        stdout: StdioCollector {
-            onStreamFinished: {
-                root.wifiConnecting = false;
+        onExited: (exitCode, exitStatus) => {
+            root.wifiConnecting = false;
+
+            if (exitCode === 0) {
                 root.wifiExpandedSsid = "";
-                root.scanWifiNetworks();
+                root.wifiStatusText = "";
+            } else {
+                root.wifiStatusText = "Disconnect failed";
             }
+
+            root.scanWifiNetworks();
         }
     }
 
@@ -1155,7 +1204,7 @@ Scope {
         id: favoritesDirProc
 
         running: true
-        command: ["sh", "-c", "mkdir -p \"$(dirname \"" + root.favoritesPath + "\")\""]
+        command: ["mkdir", "-p", root.favoritesDir]
     }
 
     FileView {
@@ -1171,11 +1220,7 @@ Scope {
         id: wifiPollProc
 
         stdout: StdioCollector {
-            onStreamFinished: {
-                const parts = text.trim().split("\t");
-                root.wifiSsid = parts[0] === "" || parts[0] === "--" ? "" : parts[0];
-                root.wifiSignal = parts.length > 1 ? parseInt(parts[1]) || 0 : 0;
-            }
+            onStreamFinished: root.parseActiveWifi(text)
         }
     }
 
@@ -1198,7 +1243,7 @@ Scope {
         triggeredOnStart: true
         onTriggered: {
             if (!wifiPollProc.running)
-                wifiPollProc.exec(["sh", "-c", "nmcli -t -f active,ssid,signal dev wifi 2>/dev/null | grep '^yes:' | head -1 | awk -F: '{printf \"%s\\t%s\\n\", $2, $3}'"]);
+                wifiPollProc.exec(["nmcli", "-t", "-f", "active,ssid,signal", "dev", "wifi"]);
             if (!btPollProc.running)
                 btPollProc.exec(["sh", "-c", "dev=$(bluetoothctl devices Connected 2>/dev/null | head -1 | cut -d' ' -f3-); [ -z \"$dev\" ] && printf '\\t\\n' && exit 0; bat=$(bluetoothctl info 2>/dev/null | sed -n 's/.*Battery Percentage: 0x[0-9a-f]* (\\([0-9]*\\)).*/\\1/p'); printf '%s\\t%s\\n' \"$dev\" \"$bat\""]);
         }
@@ -1406,7 +1451,7 @@ Scope {
                 onAppsSearchAccepted: root.launchTopSearchMatch()
                 onAppsFavoriteToggleRequested: id => root.toggleFavoriteApp(id)
                 onAppsLaunchRequested: id => root.launchFavoriteApp(id)
-                onBtSettingsRequested: btSettingsProc.exec(["sh", "-c", "bluedevil-wizard &"])
+                onBtSettingsRequested: btSettingsProc.exec(["bluedevil-wizard"])
                 onSeekRequested: position => root.mediaSeek(position)
                 onHandleStyleRequested: style => root.setHandleStyle(style)
             }
