@@ -116,6 +116,9 @@ Scope {
     property string wifiExpandedSsid: ""
     property string wifiPasswordDraft: ""
     property string pendingWifiPassword: ""
+    property string pendingWifiSsid: ""
+    property bool pendingWifiSecured: false
+    property bool pendingWifiUsedPassword: false
     property string wifiStatusText: ""
     property bool wifiConnecting: false
     property double lastWifiScanAt: 0
@@ -196,7 +199,9 @@ Scope {
     }
 
     function scheduleInteractionClose() {
-        if (!root.pinnedOpen)
+        // Detail panels are hover-owned even when the idle island was pinned.
+        // Keeping the pinned state only applies to the compact idle peek.
+        if (root.mode === "wifi" || root.mode === "apps" || !root.pinnedOpen)
             hoverLeaveTimer.restart();
     }
 
@@ -234,6 +239,9 @@ Scope {
         root.appsPickerOpen = false;
         root.appsSearchDraft = "";
         root.appsStatusText = "";
+        root.wifiExpandedSsid = "";
+        root.wifiPasswordDraft = "";
+        root.wifiStatusText = "";
 
         if (root.liveLinksEnabled) {
             root.chooseActivePlayer(null);
@@ -762,17 +770,18 @@ Scope {
     }
 
     function connectToWifiNetwork(ssid, secured) {
-        if (secured && root.wifiPasswordDraft === "") {
-            root.wifiStatusText = "Password required";
+        if (root.wifiConnecting)
             return;
-        }
 
         root.wifiConnecting = true;
         root.wifiStatusText = "";
+        root.pendingWifiSsid = ssid;
+        root.pendingWifiSecured = secured;
+        root.pendingWifiUsedPassword = root.wifiPasswordDraft !== "";
 
         const command = ["nmcli"];
 
-        if (secured) {
+        if (root.pendingWifiUsedPassword) {
             root.pendingWifiPassword = root.wifiPasswordDraft;
             command.push("--ask");
         }
@@ -1000,7 +1009,12 @@ Scope {
         id: hoverLeaveTimer
         interval: 140
         repeat: false
-        onTriggered: root.pointerInside = false
+        onTriggered: {
+            root.pointerInside = false;
+
+            if (root.mode === "wifi" || root.mode === "apps")
+                root.showIdle();
+        }
     }
 
     Timer {
@@ -1158,13 +1172,27 @@ Scope {
             }
         }
         onExited: (exitCode, exitStatus) => {
+            const attemptedSsid = root.pendingWifiSsid;
+            const secured = root.pendingWifiSecured;
+            const usedPassword = root.pendingWifiUsedPassword;
+
             root.wifiConnecting = false;
             root.pendingWifiPassword = "";
+            root.pendingWifiSsid = "";
+            root.pendingWifiSecured = false;
+            root.pendingWifiUsedPassword = false;
 
             if (exitCode === 0) {
                 root.wifiExpandedSsid = "";
                 root.wifiPasswordDraft = "";
                 root.wifiStatusText = "";
+            } else if (secured && !usedPassword) {
+                // `nmcli device wifi connect` reuses a matching saved profile.
+                // Only fall back to asking for a secret when that direct attempt
+                // could not activate the secured network.
+                root.wifiExpandedSsid = attemptedSsid;
+                root.wifiPasswordDraft = "";
+                root.wifiStatusText = "Password required";
             } else {
                 root.wifiStatusText = "Connection failed";
             }

@@ -709,14 +709,6 @@ Item {
                                         font.weight: Font.DemiBold
                                     }
 
-                                    Text {
-                                        text: wifiRowItem.modelData.signal + "%"
-                                        color: "#6d6d6d"
-                                        font.family: root.fontFamily
-                                        font.pixelSize: 10
-                                        font.weight: Font.DemiBold
-                                    }
-
                                     // Fixed slots so the trailing column stays aligned
                                     // whether or not a row is secured or active.
                                     Item {
@@ -882,7 +874,12 @@ Item {
                                 anchors.bottomMargin: wifiRowItem.expanded ? parent.height - root.wifiRowHeight : 0
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: root.wifiRowRequested(wifiRowItem.modelData.ssid)
+                                onClicked: {
+                                    if (wifiRowItem.modelData.active || wifiRowItem.expanded)
+                                        root.wifiRowRequested(wifiRowItem.modelData.ssid);
+                                    else
+                                        root.wifiConnectRequested(wifiRowItem.modelData.ssid, wifiRowItem.modelData.secured);
+                                }
                             }
                         }
                     }
