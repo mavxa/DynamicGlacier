@@ -16,7 +16,11 @@ Item {
     property string status: ""
     property string model: ""
     property bool thresholdSupported: false
+    property bool thresholdEnabled: false
+    property bool thresholdBusy: false
+    property int thresholdStart: -1
     property int thresholdEnd: -1
+    property string thresholdStatusText: ""
     property string fontFamily: "Noto Sans"
     property real morph: 0
 
@@ -33,6 +37,7 @@ Item {
     readonly property real panelProgress: Math.max(0, Math.min(1, (root.morph - 0.22) / 0.78))
 
     signal closeRequested
+    signal toggleThresholdRequested
 
     function formattedNumber(value, digits, suffix, fallback) {
         return value >= 0 && isFinite(value) ? value.toFixed(digits) + suffix : fallback;
@@ -237,18 +242,21 @@ Item {
                     },
                     {
                         icon: "battery_saver",
-                        label: "Charge limit",
-                        value: root.thresholdSupported && root.thresholdEnd > 0 ? root.thresholdEnd + "%" : "Unsupported"
+                        label: root.thresholdSupported && root.thresholdStart >= 0 && root.thresholdEnd > 0 ? "Charge limit · " + root.thresholdStart + "→" + root.thresholdEnd : "Charge limit",
+                        value: root.thresholdSupported && root.thresholdEnd > 0 ? root.thresholdEnd + "% " + (root.thresholdEnabled ? "on" : "off") : "Unsupported",
+                        action: "threshold"
                     }
                 ]
 
                 delegate: Rectangle {
+                    id: infoTile
+
                     required property var modelData
 
                     Layout.fillWidth: true
                     Layout.preferredHeight: root.tileHeight
                     radius: 13
-                    color: "#080808"
+                    color: tileMouse.containsMouse && modelData.action === "threshold" && root.thresholdSupported ? "#101010" : "#080808"
                     border.width: 1
                     border.color: "#1c1c1c"
 
@@ -261,7 +269,7 @@ Item {
                         MIcon {
                             name: modelData.icon
                             size: 15
-                            color: "#8d8d8d"
+                            color: modelData.action === "threshold" && root.thresholdEnabled ? "#4ade80" : "#8d8d8d"
                         }
 
                         ColumnLayout {
@@ -289,6 +297,16 @@ Item {
                             }
                         }
                     }
+
+                    MouseArea {
+                        id: tileMouse
+
+                        anchors.fill: parent
+                        enabled: modelData.action === "threshold" && root.thresholdSupported && !root.thresholdBusy
+                        hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: root.toggleThresholdRequested()
+                    }
                 }
             }
         }
@@ -300,9 +318,9 @@ Item {
 
             Text {
                 Layout.fillWidth: true
-                text: root.designCapacityWh > 0 ? "Designed for " + root.designCapacityWh.toFixed(1) + " Wh" : ""
+                text: root.thresholdStatusText !== "" ? root.thresholdStatusText : (root.designCapacityWh > 0 ? "Designed for " + root.designCapacityWh.toFixed(1) + " Wh" : "")
                 visible: text !== ""
-                color: "#555555"
+                color: root.thresholdStatusText !== "" ? "#8eb7f2" : "#555555"
                 elide: Text.ElideRight
                 font.family: root.fontFamily
                 font.pixelSize: 9

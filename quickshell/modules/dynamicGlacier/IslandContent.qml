@@ -41,7 +41,11 @@ Item {
     property string batteryStatus: ""
     property string batteryModel: ""
     property bool batteryThresholdSupported: false
+    property bool batteryThresholdEnabled: false
+    property bool batteryThresholdBusy: false
+    property int batteryThresholdStart: -1
     property int batteryThresholdEnd: -1
+    property string batteryThresholdStatusText: ""
     property bool wifiConnected: false
     property string wifiSsid: ""
     property int wifiSignal: 0
@@ -172,6 +176,7 @@ Item {
     signal btDeviceRequested(var device)
     signal batteryRequested
     signal batteryCloseRequested
+    signal batteryToggleThresholdRequested
     signal appsSettingsRequested
     signal appsCloseRequested
     signal appsPickerToggleRequested
@@ -967,10 +972,15 @@ Item {
         status: root.batteryStatus
         model: root.batteryModel
         thresholdSupported: root.batteryThresholdSupported
+        thresholdEnabled: root.batteryThresholdEnabled
+        thresholdBusy: root.batteryThresholdBusy
+        thresholdStart: root.batteryThresholdStart
         thresholdEnd: root.batteryThresholdEnd
+        thresholdStatusText: root.batteryThresholdStatusText
         fontFamily: root.fontFamily
         morph: root.batteryMorph
         onCloseRequested: root.batteryCloseRequested()
+        onToggleThresholdRequested: root.batteryToggleThresholdRequested()
     }
 
     Item {

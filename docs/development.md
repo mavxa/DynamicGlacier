@@ -67,6 +67,8 @@ quickshell ipc --path quickshell call dynamicGlacier live true
 quickshell ipc --path quickshell call dynamicGlacier live false
 quickshell ipc --path quickshell call dynamicGlacier bluetooth
 quickshell ipc --path quickshell call dynamicGlacier battery
+quickshell ipc --path quickshell call dynamicGlacier batteryLimit true
+quickshell ipc --path quickshell call dynamicGlacier batteryLimit false
 quickshell ipc --path quickshell call dynamicGlacier idle
 ```
 
@@ -115,7 +117,7 @@ Do not kill all Quickshell instances unless you intentionally want to stop the m
 - `quickshell/modules/dynamicGlacier/IslandSurface.qml`: outer shape, glow, background, animation of shell geometry.
 - `quickshell/modules/dynamicGlacier/IslandContent.qml`: per-mode content layout for idle, notification, and media.
 - `quickshell/modules/dynamicGlacier/BluetoothPanel.qml`: native BlueZ device list and Bluetooth controls.
-- `quickshell/modules/dynamicGlacier/BatteryPanel.qml`: battery health, cycles, capacity, voltage, and threshold status.
+- `quickshell/modules/dynamicGlacier/BatteryPanel.qml`: battery health, cycles, capacity, voltage, and UPower threshold control.
 - `quickshell/modules/dynamicGlacier/IslandSurface.qml`: also owns the subtle open U-shaped volume trace.
 - `docs/architecture.md`: bigger design decisions and integration notes.
 

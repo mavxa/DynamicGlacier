@@ -81,7 +81,7 @@ Scope {
     readonly property int btWidth: 340
     readonly property int btMinHeight: 132
     readonly property int btMaxPanelHeight: 420
-    readonly property int batteryWidth: 340
+    readonly property int batteryWidth: 360
     readonly property int batteryMinHeight: 132
     readonly property int appsWidth: 340
     readonly property int appsMinHeight: 132
@@ -157,8 +157,14 @@ Scope {
     readonly property real batteryPower: root.batteryVoltage >= 0 && root.batteryCurrent >= 0 ? Math.abs(root.batteryVoltage * root.batteryCurrent) : -1
     readonly property string batteryStatus: root.fileText(batteryStatusFile, "")
     readonly property string batteryModel: root.fileText(batteryModelFile, "")
-    readonly property bool batteryThresholdSupported: batteryThresholdFile.loaded
-    readonly property int batteryThresholdEnd: root.fileNumber(batteryThresholdFile, -1)
+    readonly property string batteryDbusPath: (root.batteryDevice?.nativePath ?? "") !== "" ? "/org/freedesktop/UPower/devices/battery_" + root.batteryDevice.nativePath.replace(/[^A-Za-z0-9_]/g, "_") : ""
+    property bool batteryThresholdSupported: false
+    property bool batteryThresholdEnabled: false
+    property bool batteryThresholdBusy: false
+    property bool pendingBatteryThresholdEnabled: false
+    property int batteryThresholdStart: -1
+    property int batteryThresholdEnd: -1
+    property string batteryThresholdStatusText: ""
 
     // App favorites dock (morphs the island into mode "apps")
     readonly property int appsFavoriteSlots: 8
@@ -959,6 +965,64 @@ Scope {
         batteryThresholdFile.reload();
     }
 
+    function parseBusctlValue(line) {
+        const separator = line.indexOf(" ");
+        return separator >= 0 ? line.slice(separator + 1).trim() : "";
+    }
+
+    function parseBatteryThresholdState(text) {
+        const lines = text.trim().split("\n").filter(line => line.trim() !== "");
+
+        if (lines.length < 4)
+            return;
+
+        const start = Number(root.parseBusctlValue(lines[0]));
+        const end = Number(root.parseBusctlValue(lines[1]));
+
+        root.batteryThresholdStart = isFinite(start) ? start : -1;
+        root.batteryThresholdEnd = isFinite(end) ? end : -1;
+        root.batteryThresholdEnabled = root.parseBusctlValue(lines[2]) === "true";
+        root.batteryThresholdSupported = root.parseBusctlValue(lines[3]) === "true";
+    }
+
+    function refreshBatteryThresholdState() {
+        if (root.batteryDbusPath === "" || batteryThresholdStateProc.running)
+            return;
+
+        batteryThresholdStateProc.exec([
+            "busctl", "get-property",
+            "org.freedesktop.UPower",
+            root.batteryDbusPath,
+            "org.freedesktop.UPower.Device",
+            "ChargeStartThreshold",
+            "ChargeEndThreshold",
+            "ChargeThresholdEnabled",
+            "ChargeThresholdSupported"
+        ]);
+    }
+
+    function setBatteryThreshold(enabled) {
+        if (!root.batteryThresholdSupported || root.batteryThresholdBusy || root.batteryDbusPath === "")
+            return;
+
+        root.pendingBatteryThresholdEnabled = enabled;
+        root.batteryThresholdBusy = true;
+        root.batteryThresholdStatusText = "";
+        batteryThresholdToggleProc.exec([
+            "busctl", "call",
+            "org.freedesktop.UPower",
+            root.batteryDbusPath,
+            "org.freedesktop.UPower.Device",
+            "EnableChargeThreshold",
+            "b",
+            root.pendingBatteryThresholdEnabled ? "true" : "false"
+        ]);
+    }
+
+    function toggleBatteryThreshold() {
+        root.setBatteryThreshold(!root.batteryThresholdEnabled);
+    }
+
     function toggleBatteryPanel() {
         if (root.mode === "battery") {
             root.showIdle();
@@ -968,6 +1032,7 @@ Scope {
         collapseTimer.stop();
         root.mode = "battery";
         root.refreshBatteryTelemetry();
+        root.refreshBatteryThresholdState();
     }
 
     function parentDirectory(path) {
@@ -1330,6 +1395,45 @@ Scope {
         path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/charge_control_end_threshold" : ""
         preload: true
         printErrors: false
+        onLoaded: {
+            if (root.batteryThresholdEnd < 0)
+                root.batteryThresholdEnd = root.fileNumber(batteryThresholdFile, -1);
+        }
+    }
+
+    Process {
+        id: batteryThresholdStateProc
+
+        stdout: StdioCollector {
+            onStreamFinished: root.parseBatteryThresholdState(text)
+        }
+    }
+
+    Process {
+        id: batteryThresholdToggleProc
+
+        onExited: (exitCode, exitStatus) => {
+            root.batteryThresholdBusy = false;
+
+            if (exitCode === 0) {
+                root.batteryThresholdStatusText = root.pendingBatteryThresholdEnabled ? "Charge limit enabled" : "Charge limit disabled";
+                root.batteryThresholdEnabled = root.pendingBatteryThresholdEnabled;
+            } else {
+                root.batteryThresholdStatusText = "Could not change charge limit";
+            }
+
+            root.refreshBatteryTelemetry();
+            root.refreshBatteryThresholdState();
+            batteryThresholdStatusTimer.restart();
+        }
+    }
+
+    Timer {
+        id: batteryThresholdStatusTimer
+
+        interval: 2600
+        repeat: false
+        onTriggered: root.batteryThresholdStatusText = ""
     }
 
     Process {
@@ -1638,7 +1742,11 @@ Scope {
                 batteryStatus: root.batteryStatus
                 batteryModel: root.batteryModel
                 batteryThresholdSupported: root.batteryThresholdSupported
+                batteryThresholdEnabled: root.batteryThresholdEnabled
+                batteryThresholdBusy: root.batteryThresholdBusy
+                batteryThresholdStart: root.batteryThresholdStart
                 batteryThresholdEnd: root.batteryThresholdEnd
+                batteryThresholdStatusText: root.batteryThresholdStatusText
                 wifiConnected: root.wifiConnected
                 wifiSsid: root.wifiSsid
                 wifiSignal: root.wifiSignal
@@ -1688,6 +1796,7 @@ Scope {
                 onBtDeviceRequested: device => root.toggleBluetoothDevice(device)
                 onBatteryRequested: root.toggleBatteryPanel()
                 onBatteryCloseRequested: root.showIdle()
+                onBatteryToggleThresholdRequested: root.toggleBatteryThreshold()
                 onAppsSettingsRequested: root.toggleAppsPanel()
                 onAppsCloseRequested: root.showIdle()
                 onAppsPickerToggleRequested: root.toggleAppsPicker()
@@ -1925,6 +2034,10 @@ Scope {
 
         function battery(): void {
             root.toggleBatteryPanel();
+        }
+
+        function batteryLimit(enabled: string): void {
+            root.setBatteryThreshold(root.boolFromIpc(enabled));
         }
 
         function demo(): void {

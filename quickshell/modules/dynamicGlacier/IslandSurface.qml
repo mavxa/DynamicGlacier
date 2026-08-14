@@ -104,7 +104,11 @@ Item {
     property string batteryStatus: ""
     property string batteryModel: ""
     property bool batteryThresholdSupported: false
+    property bool batteryThresholdEnabled: false
+    property bool batteryThresholdBusy: false
+    property int batteryThresholdStart: -1
     property int batteryThresholdEnd: -1
+    property string batteryThresholdStatusText: ""
 
     property var favoriteAppEntries: []
     property var favoriteAppIds: []
@@ -134,6 +138,7 @@ Item {
     signal btDeviceRequested(var device)
     signal batteryRequested
     signal batteryCloseRequested
+    signal batteryToggleThresholdRequested
     signal appsSettingsRequested
     signal appsCloseRequested
     signal appsPickerToggleRequested
@@ -395,7 +400,11 @@ Item {
             batteryStatus: root.batteryStatus
             batteryModel: root.batteryModel
             batteryThresholdSupported: root.batteryThresholdSupported
+            batteryThresholdEnabled: root.batteryThresholdEnabled
+            batteryThresholdBusy: root.batteryThresholdBusy
+            batteryThresholdStart: root.batteryThresholdStart
             batteryThresholdEnd: root.batteryThresholdEnd
+            batteryThresholdStatusText: root.batteryThresholdStatusText
             wifiConnected: root.wifiConnected
             wifiSsid: root.wifiSsid
             wifiSignal: root.wifiSignal
@@ -441,6 +450,7 @@ Item {
             onBtDeviceRequested: device => root.btDeviceRequested(device)
             onBatteryRequested: root.batteryRequested()
             onBatteryCloseRequested: root.batteryCloseRequested()
+            onBatteryToggleThresholdRequested: root.batteryToggleThresholdRequested()
             onAppsSettingsRequested: root.appsSettingsRequested()
             onAppsCloseRequested: root.appsCloseRequested()
             onAppsPickerToggleRequested: root.appsPickerToggleRequested()
