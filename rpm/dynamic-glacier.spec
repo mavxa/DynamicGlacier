@@ -38,6 +38,7 @@ Requires:       google-noto-sans-fonts
 # glyphs without it. See README.md for the manual font install.
 Recommends:     kitty
 Recommends:     bluedevil
+Recommends:     power-profiles-daemon
 
 %description
 Dynamic Glacier is a native QML/Quickshell island widget for Hyprland. The idle

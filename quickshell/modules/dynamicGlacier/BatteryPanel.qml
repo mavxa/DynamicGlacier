@@ -21,6 +21,13 @@ Item {
     property int thresholdStart: -1
     property int thresholdEnd: -1
     property string thresholdStatusText: ""
+    property bool profilesAvailable: false
+    property var availableProfiles: []
+    property string activeProfile: ""
+    property bool profileBusy: false
+    property string profileStatusText: ""
+    property string performanceDegraded: ""
+    property string performanceInhibited: ""
     property string fontFamily: "Noto Sans"
     property real morph: 0
 
@@ -30,14 +37,16 @@ Item {
     readonly property int headerHeight: 32
     readonly property int overviewHeight: 70
     readonly property int tileHeight: 54
+    readonly property int profileHeight: 52
     readonly property int footerHeight: 12
     readonly property int sectionSpacing: 10
     readonly property int gridSpacing: 6
-    readonly property real contentHeight: root.panelPadding * 2 + root.headerHeight + root.sectionSpacing + root.overviewHeight + root.sectionSpacing + root.tileHeight + root.sectionSpacing + root.footerHeight
+    readonly property real contentHeight: root.panelPadding * 2 + root.headerHeight + root.sectionSpacing + root.overviewHeight + root.sectionSpacing + root.tileHeight + root.sectionSpacing + root.profileHeight + root.sectionSpacing + root.footerHeight
     readonly property real panelProgress: Math.max(0, Math.min(1, (root.morph - 0.22) / 0.78))
 
     signal closeRequested
     signal toggleThresholdRequested
+    signal powerProfileRequested(string profile)
 
     function formattedNumber(value, digits, suffix, fallback) {
         return value >= 0 && isFinite(value) ? value.toFixed(digits) + suffix : fallback;
@@ -51,6 +60,64 @@ Item {
         if (root.health >= 70)
             return "#f2c14b";
         return "#f87171";
+    }
+
+    function profileAvailable(profile) {
+        return root.profilesAvailable && root.availableProfiles.indexOf(profile) !== -1;
+    }
+
+    function profileSubtitle() {
+        if (root.profileStatusText !== "")
+            return root.profileStatusText;
+        if (root.profileBusy)
+            return "Switching…";
+        if (!root.profilesAvailable)
+            return "Unavailable";
+        if (root.activeProfile === "performance" && (root.performanceDegraded !== "" || root.performanceInhibited !== ""))
+            return "Performance limited";
+
+        return "System-wide";
+    }
+
+    component PowerProfileButton: Rectangle {
+        id: profileButton
+
+        required property string profileId
+        required property string label
+
+        readonly property bool profileEnabled: root.profileAvailable(profileId)
+        readonly property bool selected: root.activeProfile === profileId
+
+        Layout.fillWidth: true
+        Layout.preferredHeight: 30
+        radius: 10
+        color: selected ? "#f0f0f0" : (profileMouse.containsMouse && profileEnabled ? "#151515" : "#090909")
+        border.width: 1
+        border.color: selected ? "#f0f0f0" : "#232323"
+        opacity: profileEnabled ? 1 : 0.35
+
+        Behavior on color {
+            ColorAnimation { duration: 160; easing.type: Easing.OutCubic }
+        }
+
+        Text {
+            anchors.centerIn: parent
+            text: profileButton.label
+            color: profileButton.selected ? "#000000" : "#d0d0d0"
+            font.family: root.fontFamily
+            font.pixelSize: 10
+            font.weight: profileButton.selected ? Font.Bold : Font.DemiBold
+        }
+
+        MouseArea {
+            id: profileMouse
+
+            anchors.fill: parent
+            enabled: profileButton.profileEnabled && !root.profileBusy && !profileButton.selected
+            hoverEnabled: true
+            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+            onClicked: root.powerProfileRequested(profileButton.profileId)
+        }
     }
 
     opacity: root.panelProgress
@@ -311,6 +378,76 @@ Item {
             }
         }
 
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: root.profileHeight
+            radius: 13
+            color: "#080808"
+            border.width: 1
+            border.color: "#1c1c1c"
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 10
+                spacing: 9
+
+                MIcon {
+                    name: "speed"
+                    size: 16
+                    color: root.activeProfile === "performance" ? "#f2c14b" : "#8d8d8d"
+                }
+
+                ColumnLayout {
+                    Layout.minimumWidth: 82
+                    Layout.preferredWidth: 82
+                    Layout.maximumWidth: 82
+                    spacing: 0
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Power mode"
+                        color: root.primaryText
+                        elide: Text.ElideRight
+                        font.family: root.fontFamily
+                        font.pixelSize: 11
+                        font.weight: Font.Bold
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.profileSubtitle()
+                        color: root.profileStatusText.indexOf("Could not") === 0 ? "#f0736a" : "#666666"
+                        elide: Text.ElideRight
+                        font.family: root.fontFamily
+                        font.pixelSize: 9
+                        font.weight: Font.Medium
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 280
+                    spacing: 5
+
+                    PowerProfileButton {
+                        profileId: "power-saver"
+                        label: "Saver"
+                    }
+
+                    PowerProfileButton {
+                        profileId: "balanced"
+                        label: "Balanced"
+                    }
+
+                    PowerProfileButton {
+                        profileId: "performance"
+                        label: "Performance"
+                    }
+                }
+            }
+        }
+
         RowLayout {
             Layout.fillWidth: true
             Layout.preferredHeight: root.footerHeight
@@ -318,7 +455,7 @@ Item {
 
             Text {
                 Layout.fillWidth: true
-                text: root.thresholdStatusText !== "" ? root.thresholdStatusText : (root.designCapacityWh > 0 ? "Designed for " + root.designCapacityWh.toFixed(1) + " Wh" : "")
+                text: root.thresholdStatusText !== "" ? root.thresholdStatusText : (root.designCapacityWh > 0 ? "Factory capacity " + root.designCapacityWh.toFixed(1) + " Wh" : "")
                 visible: text !== ""
                 color: root.thresholdStatusText !== "" ? "#8eb7f2" : "#555555"
                 elide: Text.ElideRight

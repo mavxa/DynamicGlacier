@@ -109,6 +109,13 @@ Item {
     property int batteryThresholdStart: -1
     property int batteryThresholdEnd: -1
     property string batteryThresholdStatusText: ""
+    property bool powerProfilesAvailable: false
+    property var availablePowerProfiles: []
+    property string activePowerProfile: ""
+    property bool powerProfileBusy: false
+    property string powerProfileStatusText: ""
+    property string performanceDegraded: ""
+    property string performanceInhibited: ""
 
     property var favoriteAppEntries: []
     property var favoriteAppIds: []
@@ -139,6 +146,7 @@ Item {
     signal batteryRequested
     signal batteryCloseRequested
     signal batteryToggleThresholdRequested
+    signal powerProfileRequested(string profile)
     signal appsSettingsRequested
     signal appsCloseRequested
     signal appsPickerToggleRequested
@@ -405,6 +413,13 @@ Item {
             batteryThresholdStart: root.batteryThresholdStart
             batteryThresholdEnd: root.batteryThresholdEnd
             batteryThresholdStatusText: root.batteryThresholdStatusText
+            powerProfilesAvailable: root.powerProfilesAvailable
+            availablePowerProfiles: root.availablePowerProfiles
+            activePowerProfile: root.activePowerProfile
+            powerProfileBusy: root.powerProfileBusy
+            powerProfileStatusText: root.powerProfileStatusText
+            performanceDegraded: root.performanceDegraded
+            performanceInhibited: root.performanceInhibited
             wifiConnected: root.wifiConnected
             wifiSsid: root.wifiSsid
             wifiSignal: root.wifiSignal
@@ -451,6 +466,7 @@ Item {
             onBatteryRequested: root.batteryRequested()
             onBatteryCloseRequested: root.batteryCloseRequested()
             onBatteryToggleThresholdRequested: root.batteryToggleThresholdRequested()
+            onPowerProfileRequested: profile => root.powerProfileRequested(profile)
             onAppsSettingsRequested: root.appsSettingsRequested()
             onAppsCloseRequested: root.appsCloseRequested()
             onAppsPickerToggleRequested: root.appsPickerToggleRequested()

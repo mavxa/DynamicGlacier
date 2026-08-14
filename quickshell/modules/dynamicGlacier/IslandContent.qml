@@ -46,6 +46,13 @@ Item {
     property int batteryThresholdStart: -1
     property int batteryThresholdEnd: -1
     property string batteryThresholdStatusText: ""
+    property bool powerProfilesAvailable: false
+    property var availablePowerProfiles: []
+    property string activePowerProfile: ""
+    property bool powerProfileBusy: false
+    property string powerProfileStatusText: ""
+    property string performanceDegraded: ""
+    property string performanceInhibited: ""
     property bool wifiConnected: false
     property string wifiSsid: ""
     property int wifiSignal: 0
@@ -177,6 +184,7 @@ Item {
     signal batteryRequested
     signal batteryCloseRequested
     signal batteryToggleThresholdRequested
+    signal powerProfileRequested(string profile)
     signal appsSettingsRequested
     signal appsCloseRequested
     signal appsPickerToggleRequested
@@ -977,10 +985,18 @@ Item {
         thresholdStart: root.batteryThresholdStart
         thresholdEnd: root.batteryThresholdEnd
         thresholdStatusText: root.batteryThresholdStatusText
+        profilesAvailable: root.powerProfilesAvailable
+        availableProfiles: root.availablePowerProfiles
+        activeProfile: root.activePowerProfile
+        profileBusy: root.powerProfileBusy
+        profileStatusText: root.powerProfileStatusText
+        performanceDegraded: root.performanceDegraded
+        performanceInhibited: root.performanceInhibited
         fontFamily: root.fontFamily
         morph: root.batteryMorph
         onCloseRequested: root.batteryCloseRequested()
         onToggleThresholdRequested: root.batteryToggleThresholdRequested()
+        onPowerProfileRequested: profile => root.powerProfileRequested(profile)
     }
 
     Item {

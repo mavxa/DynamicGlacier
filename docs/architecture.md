@@ -36,6 +36,7 @@ Current live adapters:
 - PipeWire default sink volume/mute changes
 - PipeWire link groups plus small shell fallbacks for microphone/video privacy activity
 - UPower battery state/threshold changes
+- system power profiles through the non-owning `org.freedesktop.UPower.PowerProfiles` D-Bus service
 - BlueZ Bluetooth adapter and device changes through `Quickshell.Bluetooth`
 - read-only battery telemetry from the kernel `power_supply` interface, paired with UPower live state and its Polkit-guarded charge-threshold method
 

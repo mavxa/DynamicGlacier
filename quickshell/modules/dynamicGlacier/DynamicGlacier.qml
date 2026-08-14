@@ -165,6 +165,14 @@ Scope {
     property int batteryThresholdStart: -1
     property int batteryThresholdEnd: -1
     property string batteryThresholdStatusText: ""
+    property bool powerProfilesAvailable: false
+    property var availablePowerProfiles: []
+    property string activePowerProfile: ""
+    property bool powerProfileBusy: false
+    property string pendingPowerProfile: ""
+    property string powerProfileStatusText: ""
+    property string performanceDegraded: ""
+    property string performanceInhibited: ""
 
     // App favorites dock (morphs the island into mode "apps")
     readonly property int appsFavoriteSlots: 8
@@ -1023,6 +1031,67 @@ Scope {
         root.setBatteryThreshold(!root.batteryThresholdEnabled);
     }
 
+    function parseBusctlString(line) {
+        const value = root.parseBusctlValue(line);
+
+        if (value.length >= 2 && value.charAt(0) === "\"" && value.charAt(value.length - 1) === "\"")
+            return value.slice(1, -1);
+
+        return value;
+    }
+
+    function parsePowerProfileState(text) {
+        const lines = text.trim().split("\n").filter(line => line.trim() !== "");
+
+        if (lines.length < 4)
+            return;
+
+        const profilesLine = lines[1];
+        const knownProfiles = ["power-saver", "balanced", "performance"];
+        const profiles = knownProfiles.filter(profile => profilesLine.indexOf("\"" + profile + "\"") !== -1);
+        const active = root.parseBusctlString(lines[0]);
+
+        root.availablePowerProfiles = profiles;
+        root.activePowerProfile = active;
+        root.performanceDegraded = root.parseBusctlString(lines[2]);
+        root.performanceInhibited = root.parseBusctlString(lines[3]);
+        root.powerProfilesAvailable = profiles.length > 0 && profiles.indexOf(active) !== -1;
+    }
+
+    function refreshPowerProfileState() {
+        if (powerProfileStateProc.running)
+            return;
+
+        powerProfileStateProc.exec([
+            "busctl", "get-property",
+            "org.freedesktop.UPower.PowerProfiles",
+            "/org/freedesktop/UPower/PowerProfiles",
+            "org.freedesktop.UPower.PowerProfiles",
+            "ActiveProfile",
+            "Profiles",
+            "PerformanceDegraded",
+            "PerformanceInhibited"
+        ]);
+    }
+
+    function setPowerProfile(profile) {
+        if (!root.powerProfilesAvailable || root.powerProfileBusy || root.availablePowerProfiles.indexOf(profile) === -1 || profile === root.activePowerProfile)
+            return;
+
+        root.pendingPowerProfile = profile;
+        root.powerProfileBusy = true;
+        root.powerProfileStatusText = "";
+        powerProfileSetProc.exec([
+            "busctl", "set-property",
+            "org.freedesktop.UPower.PowerProfiles",
+            "/org/freedesktop/UPower/PowerProfiles",
+            "org.freedesktop.UPower.PowerProfiles",
+            "ActiveProfile",
+            "s",
+            profile
+        ]);
+    }
+
     function toggleBatteryPanel() {
         if (root.mode === "battery") {
             root.showIdle();
@@ -1033,6 +1102,7 @@ Scope {
         root.mode = "battery";
         root.refreshBatteryTelemetry();
         root.refreshBatteryThresholdState();
+        root.refreshPowerProfileState();
     }
 
     function parentDirectory(path) {
@@ -1437,6 +1507,60 @@ Scope {
     }
 
     Process {
+        id: powerProfileStateProc
+
+        stdout: StdioCollector {
+            onStreamFinished: root.parsePowerProfileState(text)
+        }
+
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode !== 0) {
+                root.powerProfilesAvailable = false;
+                root.availablePowerProfiles = [];
+                root.activePowerProfile = "";
+                root.performanceDegraded = "";
+                root.performanceInhibited = "";
+            }
+        }
+    }
+
+    Process {
+        id: powerProfileSetProc
+
+        onExited: (exitCode, exitStatus) => {
+            const requestedProfile = root.pendingPowerProfile;
+
+            root.powerProfileBusy = false;
+            root.pendingPowerProfile = "";
+
+            if (exitCode === 0) {
+                root.activePowerProfile = requestedProfile;
+                root.powerProfileStatusText = "Power mode changed";
+            } else {
+                root.powerProfileStatusText = "Could not change power mode";
+            }
+
+            root.refreshPowerProfileState();
+            powerProfileStatusTimer.restart();
+        }
+    }
+
+    Timer {
+        id: powerProfileStatusTimer
+
+        interval: 2600
+        repeat: false
+        onTriggered: root.powerProfileStatusText = ""
+    }
+
+    Timer {
+        interval: 5000
+        repeat: true
+        running: root.mode === "battery" && root.powerProfilesAvailable
+        onTriggered: root.refreshPowerProfileState()
+    }
+
+    Process {
         id: privacyPollProc
 
         stdout: StdioCollector {
@@ -1747,6 +1871,13 @@ Scope {
                 batteryThresholdStart: root.batteryThresholdStart
                 batteryThresholdEnd: root.batteryThresholdEnd
                 batteryThresholdStatusText: root.batteryThresholdStatusText
+                powerProfilesAvailable: root.powerProfilesAvailable
+                availablePowerProfiles: root.availablePowerProfiles
+                activePowerProfile: root.activePowerProfile
+                powerProfileBusy: root.powerProfileBusy
+                powerProfileStatusText: root.powerProfileStatusText
+                performanceDegraded: root.performanceDegraded
+                performanceInhibited: root.performanceInhibited
                 wifiConnected: root.wifiConnected
                 wifiSsid: root.wifiSsid
                 wifiSignal: root.wifiSignal
@@ -1797,6 +1928,7 @@ Scope {
                 onBatteryRequested: root.toggleBatteryPanel()
                 onBatteryCloseRequested: root.showIdle()
                 onBatteryToggleThresholdRequested: root.toggleBatteryThreshold()
+                onPowerProfileRequested: profile => root.setPowerProfile(profile)
                 onAppsSettingsRequested: root.toggleAppsPanel()
                 onAppsCloseRequested: root.showIdle()
                 onAppsPickerToggleRequested: root.toggleAppsPicker()
@@ -2042,6 +2174,10 @@ Scope {
 
         function batteryLimit(enabled: string): void {
             root.setBatteryThreshold(root.boolFromIpc(enabled));
+        }
+
+        function powerProfile(profile: string): void {
+            root.setPowerProfile(profile);
         }
 
         function demo(): void {

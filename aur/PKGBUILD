@@ -26,6 +26,7 @@ depends=(
 optdepends=(
   'kitty: WiFi settings via nmtui'
   'bluedevil: Bluetooth device wizard'
+  'power-profiles-daemon: system power profile switching'
 )
 makedepends=('git')
 provides=('dynamic-glacier')
