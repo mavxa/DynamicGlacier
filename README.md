@@ -178,7 +178,7 @@ bash uninstall.sh --yes
 - Subtle open U-shaped trace for volume and brightness changes.
 - Wi-Fi status and a built-in `nmcli` network manager with saved-profile reconnects.
 - Native BlueZ Bluetooth panel with radio toggle, discovery, device connect/disconnect, and battery status.
-- Battery icon + percentage on hover through UPower.
+- Clickable battery telemetry panel with charge, health, cycles, capacity, voltage, and detected charge limit.
 - Microphone and camera privacy dots with separate colors and non-overlapping layout.
 - PipeWire privacy detection plus local fallbacks for `pactl` microphone streams and `/dev/video*` camera users.
 - Minimalist pill toggle for bump/strip mode switching.
@@ -274,6 +274,7 @@ quickshell ipc --path quickshell call dynamicGlacier privacyLive
 quickshell ipc --path quickshell call dynamicGlacier toggleHandle
 quickshell ipc --path quickshell call dynamicGlacier live true
 quickshell ipc --path quickshell call dynamicGlacier bluetooth
+quickshell ipc --path quickshell call dynamicGlacier battery
 quickshell ipc --path quickshell call dynamicGlacier idle
 ```
 

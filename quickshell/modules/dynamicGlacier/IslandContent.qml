@@ -31,6 +31,17 @@ Item {
     property string batteryHoverText: ""
     property bool batteryCharging: false
     property int batteryLevel: 0
+    property bool batteryAvailable: false
+    property real batteryHealth: -1
+    property int batteryCycles: -1
+    property real batteryFullCapacityWh: -1
+    property real batteryDesignCapacityWh: -1
+    property real batteryVoltage: -1
+    property real batteryPower: -1
+    property string batteryStatus: ""
+    property string batteryModel: ""
+    property bool batteryThresholdSupported: false
+    property int batteryThresholdEnd: -1
     property bool wifiConnected: false
     property string wifiSsid: ""
     property int wifiSignal: 0
@@ -78,6 +89,9 @@ Item {
     property real btMorph: 0
     property int btMaxPanelHeight: 420
     readonly property real btContentHeight: btContent.contentHeight
+
+    property real batteryMorph: 0
+    readonly property real batteryContentHeight: batteryContent.contentHeight
 
     property var favoriteAppEntries: []
     property var favoriteAppIds: []
@@ -130,10 +144,10 @@ Item {
     readonly property int favoriteAppCount: root.favoriteAppIds.length
 
     // Only one panel morph is ever non-zero, so the peek can react to whichever is running.
-    readonly property real panelMorph: Math.max(root.wifiMorph, root.btMorph, root.appsMorph)
+    readonly property real panelMorph: Math.max(root.wifiMorph, root.btMorph, root.batteryMorph, root.appsMorph)
 
     // The peek stays mounted through the morph so it can fade/shrink into the panel.
-    readonly property bool peekVisible: (root.mode === "idle" && root.forceExpanded) || root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "apps"
+    readonly property bool peekVisible: (root.mode === "idle" && root.forceExpanded) || root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "battery" || root.mode === "apps"
     readonly property real peekMorphOpacity: 1 - Math.min(1, root.panelMorph / 0.45)
     readonly property real wifiPanelProgress: Math.max(0, Math.min(1, (root.wifiMorph - 0.22) / 0.78))
     readonly property real appsPanelProgress: Math.max(0, Math.min(1, (root.appsMorph - 0.22) / 0.78))
@@ -156,6 +170,8 @@ Item {
     signal btToggleRadioRequested
     signal btRefreshRequested
     signal btDeviceRequested(var device)
+    signal batteryRequested
+    signal batteryCloseRequested
     signal appsSettingsRequested
     signal appsCloseRequested
     signal appsPickerToggleRequested
@@ -360,6 +376,7 @@ Item {
                 fontFamily: root.fontFamily
                 showBattery: true
                 onHandleStyleRequested: style => root.handleStyleRequested(style)
+                onBatteryRequested: root.batteryRequested()
             }
 
             RowLayout {
@@ -932,6 +949,28 @@ Item {
         onToggleRadioRequested: root.btToggleRadioRequested()
         onRefreshRequested: root.btRefreshRequested()
         onDeviceRequested: device => root.btDeviceRequested(device)
+    }
+
+    BatteryPanel {
+        id: batteryContent
+
+        anchors.fill: parent
+        available: root.batteryAvailable
+        level: root.batteryLevel
+        charging: root.batteryCharging
+        health: root.batteryHealth
+        cycles: root.batteryCycles
+        fullCapacityWh: root.batteryFullCapacityWh
+        designCapacityWh: root.batteryDesignCapacityWh
+        voltage: root.batteryVoltage
+        power: root.batteryPower
+        status: root.batteryStatus
+        model: root.batteryModel
+        thresholdSupported: root.batteryThresholdSupported
+        thresholdEnd: root.batteryThresholdEnd
+        fontFamily: root.fontFamily
+        morph: root.batteryMorph
+        onCloseRequested: root.batteryCloseRequested()
     }
 
     Item {
@@ -1674,6 +1713,7 @@ Item {
                 compact: true
                 showBattery: true
                 onHandleStyleRequested: style => root.handleStyleRequested(style)
+                onBatteryRequested: root.batteryRequested()
             }
 
             RowLayout {

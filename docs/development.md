@@ -66,6 +66,7 @@ quickshell ipc --path quickshell call dynamicGlacier privacyLive
 quickshell ipc --path quickshell call dynamicGlacier live true
 quickshell ipc --path quickshell call dynamicGlacier live false
 quickshell ipc --path quickshell call dynamicGlacier bluetooth
+quickshell ipc --path quickshell call dynamicGlacier battery
 quickshell ipc --path quickshell call dynamicGlacier idle
 ```
 
@@ -114,6 +115,7 @@ Do not kill all Quickshell instances unless you intentionally want to stop the m
 - `quickshell/modules/dynamicGlacier/IslandSurface.qml`: outer shape, glow, background, animation of shell geometry.
 - `quickshell/modules/dynamicGlacier/IslandContent.qml`: per-mode content layout for idle, notification, and media.
 - `quickshell/modules/dynamicGlacier/BluetoothPanel.qml`: native BlueZ device list and Bluetooth controls.
+- `quickshell/modules/dynamicGlacier/BatteryPanel.qml`: battery health, cycles, capacity, voltage, and threshold status.
 - `quickshell/modules/dynamicGlacier/IslandSurface.qml`: also owns the subtle open U-shaped volume trace.
 - `docs/architecture.md`: bigger design decisions and integration notes.
 
@@ -128,6 +130,7 @@ Dynamic Glacier currently listens to:
 - PipeWire link groups for microphone/video privacy activity through `Quickshell.Services.Pipewire`
 - shell fallbacks for privacy activity: `pactl list source-outputs short` for microphone capture and `fuser /dev/video*` for direct V4L2 camera users
 - UPower display battery through `Quickshell.Services.UPower`
+- kernel battery telemetry through `/sys/class/power_supply/<battery>`
 - Bluetooth adapters and devices through `Quickshell.Bluetooth`
 
 Volume deliberately does not open a full island state because end-4 already has its own volume OSD. It only paints a light gray open U-shaped trace just inside the current island perimeter for about a second; the top edge must stay unconnected.

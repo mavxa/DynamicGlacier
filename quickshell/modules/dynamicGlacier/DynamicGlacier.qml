@@ -81,6 +81,8 @@ Scope {
     readonly property int btWidth: 340
     readonly property int btMinHeight: 132
     readonly property int btMaxPanelHeight: 420
+    readonly property int batteryWidth: 340
+    readonly property int batteryMinHeight: 132
     readonly property int appsWidth: 340
     readonly property int appsMinHeight: 132
     readonly property int appsMaxPanelHeight: 470
@@ -139,6 +141,25 @@ Scope {
     readonly property bool btDiscovering: root.btAdapter?.discovering ?? false
     property string btStatusText: ""
 
+    // Detailed battery telemetry combines reactive UPower state with values that
+    // are only exposed by the kernel power_supply interface on this machine.
+    readonly property var batteryDevice: UPower.devices.values.find(device => device.isLaptopBattery && (device.nativePath ?? "") !== "") ?? UPower.displayDevice
+    readonly property string batterySysfsPath: (root.batteryDevice?.nativePath ?? "") !== "" ? "/sys/class/power_supply/" + root.batteryDevice.nativePath : ""
+    readonly property int batteryCycles: root.fileNumber(batteryCycleFile, -1)
+    readonly property real batteryFullCharge: root.fileNumber(batteryFullFile, -1)
+    readonly property real batteryDesignCharge: root.fileNumber(batteryDesignFile, -1)
+    readonly property real batteryDesignVoltage: root.fileNumber(batteryDesignVoltageFile, -1)
+    readonly property real batteryVoltage: root.fileNumber(batteryVoltageFile, -1) / 1000000
+    readonly property real batteryCurrent: root.fileNumber(batteryCurrentFile, -1) / 1000000
+    readonly property real batteryFullCapacityWh: root.batteryFullCharge >= 0 && root.batteryDesignVoltage > 0 ? root.batteryFullCharge * root.batteryDesignVoltage / 1000000000000 : -1
+    readonly property real batteryDesignCapacityWh: root.batteryDesignCharge >= 0 && root.batteryDesignVoltage > 0 ? root.batteryDesignCharge * root.batteryDesignVoltage / 1000000000000 : -1
+    readonly property real batteryHealth: root.batteryFullCharge >= 0 && root.batteryDesignCharge > 0 ? Math.min(100, root.batteryFullCharge / root.batteryDesignCharge * 100) : -1
+    readonly property real batteryPower: root.batteryVoltage >= 0 && root.batteryCurrent >= 0 ? Math.abs(root.batteryVoltage * root.batteryCurrent) : -1
+    readonly property string batteryStatus: root.fileText(batteryStatusFile, "")
+    readonly property string batteryModel: root.fileText(batteryModelFile, "")
+    readonly property bool batteryThresholdSupported: batteryThresholdFile.loaded
+    readonly property int batteryThresholdEnd: root.fileNumber(batteryThresholdFile, -1)
+
     // App favorites dock (morphs the island into mode "apps")
     readonly property int appsFavoriteSlots: 8
     readonly property string favoritesPath: Quickshell.statePath("favorites.json")
@@ -165,6 +186,8 @@ Scope {
             return root.wifiWidth;
         case "bluetooth":
             return root.btWidth;
+        case "battery":
+            return root.batteryWidth;
         case "apps":
             return root.appsWidth;
         default:
@@ -186,6 +209,8 @@ Scope {
             return root.wifiMinHeight;
         case "bluetooth":
             return root.btMinHeight;
+        case "battery":
+            return root.batteryMinHeight;
         case "apps":
             return root.appsMinHeight;
         default:
@@ -215,12 +240,30 @@ Scope {
     function scheduleInteractionClose() {
         // Detail panels are hover-owned even when the idle island was pinned.
         // Keeping the pinned state only applies to the compact idle peek.
-        if (root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "apps" || !root.pinnedOpen)
+        if (root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "battery" || root.mode === "apps" || !root.pinnedOpen)
             hoverLeaveTimer.restart();
     }
 
     function boolFromIpc(value) {
         return value === true || value === "true" || value === "1" || value === "on" || value === "yes";
+    }
+
+    function fileText(fileView, fallback) {
+        if (!fileView?.loaded)
+            return fallback;
+
+        const value = fileView.text().trim();
+        return value !== "" ? value : fallback;
+    }
+
+    function fileNumber(fileView, fallback) {
+        const text = root.fileText(fileView, "");
+
+        if (text === "")
+            return fallback;
+
+        const value = Number(text);
+        return isFinite(value) ? value : fallback;
     }
 
     function pad2(value) {
@@ -901,6 +944,32 @@ Scope {
             device.connect();
     }
 
+    function refreshBatteryTelemetry() {
+        if (root.batterySysfsPath === "")
+            return;
+
+        batteryCycleFile.reload();
+        batteryFullFile.reload();
+        batteryDesignFile.reload();
+        batteryDesignVoltageFile.reload();
+        batteryVoltageFile.reload();
+        batteryCurrentFile.reload();
+        batteryStatusFile.reload();
+        batteryModelFile.reload();
+        batteryThresholdFile.reload();
+    }
+
+    function toggleBatteryPanel() {
+        if (root.mode === "battery") {
+            root.showIdle();
+            return;
+        }
+
+        collapseTimer.stop();
+        root.mode = "battery";
+        root.refreshBatteryTelemetry();
+    }
+
     function parentDirectory(path) {
         const separator = path.lastIndexOf("/");
 
@@ -1093,7 +1162,7 @@ Scope {
         onTriggered: {
             root.pointerInside = false;
 
-            if (root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "apps")
+            if (root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "battery" || root.mode === "apps")
                 root.showIdle();
         }
     }
@@ -1198,6 +1267,69 @@ Scope {
         path: root.backlightPath === "" ? "" : root.backlightPath + "/brightness"
         printErrors: false
         onLoaded: root.updateRawBrightness(Number(backlightFile.text().trim()))
+    }
+
+    FileView {
+        id: batteryCycleFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/cycle_count" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryFullFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/charge_full" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryDesignFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/charge_full_design" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryDesignVoltageFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/voltage_min_design" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryVoltageFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/voltage_now" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryCurrentFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/current_now" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryStatusFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/status" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryModelFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/model_name" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryThresholdFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/charge_control_end_threshold" : ""
+        preload: true
+        printErrors: false
     }
 
     Process {
@@ -1496,6 +1628,17 @@ Scope {
                 batteryHoverText: root.batteryHoverText
                 batteryCharging: root.batteryPluggedIn()
                 batteryLevel: root.batteryLevel()
+                batteryAvailable: root.batteryAvailable()
+                batteryHealth: root.batteryHealth
+                batteryCycles: root.batteryCycles
+                batteryFullCapacityWh: root.batteryFullCapacityWh
+                batteryDesignCapacityWh: root.batteryDesignCapacityWh
+                batteryVoltage: root.batteryVoltage
+                batteryPower: root.batteryPower
+                batteryStatus: root.batteryStatus
+                batteryModel: root.batteryModel
+                batteryThresholdSupported: root.batteryThresholdSupported
+                batteryThresholdEnd: root.batteryThresholdEnd
                 wifiConnected: root.wifiConnected
                 wifiSsid: root.wifiSsid
                 wifiSignal: root.wifiSignal
@@ -1543,6 +1686,8 @@ Scope {
                 onBtToggleRadioRequested: root.toggleBluetoothRadio()
                 onBtRefreshRequested: root.refreshBluetoothDevices()
                 onBtDeviceRequested: device => root.toggleBluetoothDevice(device)
+                onBatteryRequested: root.toggleBatteryPanel()
+                onBatteryCloseRequested: root.showIdle()
                 onAppsSettingsRequested: root.toggleAppsPanel()
                 onAppsCloseRequested: root.showIdle()
                 onAppsPickerToggleRequested: root.toggleAppsPicker()
@@ -1573,7 +1718,10 @@ Scope {
                     circular: true
                     active: root.trayVisible && root.batteryAvailable() && root.batteryPluggedIn()
                     dismissed: root.trayBatteryDismissed
-                    onClicked: root.trayBatteryDismissed = true
+                    onClicked: {
+                        root.trayBatteryDismissed = true;
+                        root.toggleBatteryPanel();
+                    }
                 }
 
                 Behavior on opacity {
@@ -1703,7 +1851,7 @@ Scope {
                 width: island.width
                 height: root.mode === "idle" && !root.interactionOpen ? Math.max(root.reservedZone, island.height) : island.height
                 hoverEnabled: true
-                acceptedButtons: root.visualMode === "media" || root.visualMode === "wifi" || root.visualMode === "bluetooth" || root.visualMode === "apps" || root.interactionOpen ? Qt.NoButton : Qt.LeftButton
+                acceptedButtons: root.visualMode === "media" || root.visualMode === "wifi" || root.visualMode === "bluetooth" || root.visualMode === "battery" || root.visualMode === "apps" || root.interactionOpen ? Qt.NoButton : Qt.LeftButton
                 cursorShape: Qt.PointingHandCursor
                 onEntered: root.keepInteractionOpen(true)
                 onExited: {
@@ -1773,6 +1921,10 @@ Scope {
 
         function bluetooth(): void {
             root.toggleBluetoothPanel();
+        }
+
+        function battery(): void {
+            root.toggleBatteryPanel();
         }
 
         function demo(): void {

@@ -14,6 +14,7 @@ RowLayout {
     property bool compact: false
 
     signal handleStyleRequested(string style)
+    signal batteryRequested
 
     Layout.fillWidth: true
     Layout.preferredHeight: root.compact ? 15 : 17
@@ -76,24 +77,41 @@ RowLayout {
         }
     }
 
-    Row {
-        spacing: 3
+    Item {
         visible: root.showBattery && root.batteryLevel > 0
+        Layout.preferredWidth: batteryRow.width
+        Layout.preferredHeight: batteryRow.height
 
-        MIcon {
-            name: root.batteryCharging ? "bolt" : root.batteryLevel <= 20 ? "battery_alert" : "battery_full"
-            size: root.compact ? 12 : 13
-            color: root.batteryCharging ? "#4ade80" : root.batteryLevel <= 20 ? "#f87171" : "#ececec"
-            anchors.verticalCenter: parent.verticalCenter
+        Row {
+            id: batteryRow
+
+            spacing: 3
+
+            MIcon {
+                name: root.batteryCharging ? "bolt" : root.batteryLevel <= 20 ? "battery_alert" : "battery_full"
+                size: root.compact ? 12 : 13
+                color: root.batteryCharging ? "#4ade80" : root.batteryLevel <= 20 ? "#f87171" : "#ececec"
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Text {
+                text: root.batteryLevel + "%"
+                color: batteryMouse.containsMouse ? "#ffffff" : "#ececec"
+                font.family: root.fontFamily
+                font.pixelSize: root.compact ? 10 : 11
+                font.weight: Font.Bold
+                anchors.verticalCenter: parent.verticalCenter
+            }
         }
 
-        Text {
-            text: root.batteryLevel + "%"
-            color: "#ececec"
-            font.family: root.fontFamily
-            font.pixelSize: root.compact ? 10 : 11
-            font.weight: Font.Bold
-            anchors.verticalCenter: parent.verticalCenter
+        MouseArea {
+            id: batteryMouse
+
+            anchors.fill: parent
+            anchors.margins: -4
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.batteryRequested()
         }
     }
 }

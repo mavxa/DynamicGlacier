@@ -59,6 +59,9 @@ Item {
     property real btMorph: 0
     readonly property real btPanelHeight: islandContent.btContentHeight
 
+    property real batteryMorph: 0
+    readonly property real batteryPanelHeight: islandContent.batteryContentHeight
+
     // Same idea for the favorites dock. Only one of the two morphs is ever
     // non-zero, since the island can only be in one panel mode at a time.
     property real appsMorph: 0
@@ -91,6 +94,18 @@ Item {
     property var btDevices: []
     property string btStatusText: ""
 
+    property bool batteryAvailable: false
+    property real batteryHealth: -1
+    property int batteryCycles: -1
+    property real batteryFullCapacityWh: -1
+    property real batteryDesignCapacityWh: -1
+    property real batteryVoltage: -1
+    property real batteryPower: -1
+    property string batteryStatus: ""
+    property string batteryModel: ""
+    property bool batteryThresholdSupported: false
+    property int batteryThresholdEnd: -1
+
     property var favoriteAppEntries: []
     property var favoriteAppIds: []
     property var appsPickerEntries: []
@@ -117,6 +132,8 @@ Item {
     signal btToggleRadioRequested
     signal btRefreshRequested
     signal btDeviceRequested(var device)
+    signal batteryRequested
+    signal batteryCloseRequested
     signal appsSettingsRequested
     signal appsCloseRequested
     signal appsPickerToggleRequested
@@ -331,11 +348,12 @@ Item {
             z: 10
             anchors.fill: parent
             // Padding relaxes to zero as a panel takes over — panels bring their own.
-            anchors.margins: root.expanded ? (root.mode === "media" ? 10 : 12) * (1 - root.wifiMorph) * (1 - root.btMorph) * (1 - root.appsMorph) * (1 - root.volumeMorph) : 0
+            anchors.margins: root.expanded ? (root.mode === "media" ? 10 : 12) * (1 - root.wifiMorph) * (1 - root.btMorph) * (1 - root.batteryMorph) * (1 - root.appsMorph) * (1 - root.volumeMorph) : 0
             wifiMorph: root.wifiMorph
             wifiMaxPanelHeight: root.wifiMaxPanelHeight
             btMorph: root.btMorph
             btMaxPanelHeight: root.btMaxPanelHeight
+            batteryMorph: root.batteryMorph
             appsMorph: root.appsMorph
             appsMaxPanelHeight: root.appsMaxPanelHeight
             volumeMorph: root.volumeMorph
@@ -367,6 +385,17 @@ Item {
             batteryHoverText: root.batteryHoverText
             batteryCharging: root.batteryCharging
             batteryLevel: root.batteryLevel
+            batteryAvailable: root.batteryAvailable
+            batteryHealth: root.batteryHealth
+            batteryCycles: root.batteryCycles
+            batteryFullCapacityWh: root.batteryFullCapacityWh
+            batteryDesignCapacityWh: root.batteryDesignCapacityWh
+            batteryVoltage: root.batteryVoltage
+            batteryPower: root.batteryPower
+            batteryStatus: root.batteryStatus
+            batteryModel: root.batteryModel
+            batteryThresholdSupported: root.batteryThresholdSupported
+            batteryThresholdEnd: root.batteryThresholdEnd
             wifiConnected: root.wifiConnected
             wifiSsid: root.wifiSsid
             wifiSignal: root.wifiSignal
@@ -410,6 +439,8 @@ Item {
             onBtToggleRadioRequested: root.btToggleRadioRequested()
             onBtRefreshRequested: root.btRefreshRequested()
             onBtDeviceRequested: device => root.btDeviceRequested(device)
+            onBatteryRequested: root.batteryRequested()
+            onBatteryCloseRequested: root.batteryCloseRequested()
             onAppsSettingsRequested: root.appsSettingsRequested()
             onAppsCloseRequested: root.appsCloseRequested()
             onAppsPickerToggleRequested: root.appsPickerToggleRequested()
@@ -426,7 +457,7 @@ Item {
     // Height is a plain binding, not part of the state, so it can re-target while
     // the morph is still running — the network list usually lands mid-transition,
     // and the app picker drawer opens long after the morph has settled.
-    height: root.mode === "wifi" ? Math.max(root.targetH, root.wifiPanelHeight) : (root.mode === "bluetooth" ? Math.max(root.targetH, root.btPanelHeight) : (root.mode === "apps" ? Math.max(root.targetH, root.appsPanelHeight) : root.targetH))
+    height: root.mode === "wifi" ? Math.max(root.targetH, root.wifiPanelHeight) : (root.mode === "bluetooth" ? Math.max(root.targetH, root.btPanelHeight) : (root.mode === "battery" ? Math.max(root.targetH, root.batteryPanelHeight) : (root.mode === "apps" ? Math.max(root.targetH, root.appsPanelHeight) : root.targetH)))
 
     state: root.mode !== "idle" ? root.mode : (root.forceExpanded ? "peek" : "collapsed")
 
@@ -438,6 +469,7 @@ Item {
                 root.width: root.targetW
                 root.wifiMorph: 0
                 root.btMorph: 0
+                root.batteryMorph: 0
                 root.appsMorph: 0
                 root.volumeMorph: 0
             }
@@ -449,6 +481,7 @@ Item {
                 root.width: root.targetW
                 root.wifiMorph: 0
                 root.btMorph: 0
+                root.batteryMorph: 0
                 root.appsMorph: 0
                 root.volumeMorph: 0
             }
@@ -460,6 +493,7 @@ Item {
                 root.width: root.targetW
                 root.wifiMorph: 0
                 root.btMorph: 0
+                root.batteryMorph: 0
                 root.appsMorph: 0
                 root.volumeMorph: 0
             }
@@ -471,6 +505,7 @@ Item {
                 root.width: root.targetW
                 root.wifiMorph: 0
                 root.btMorph: 0
+                root.batteryMorph: 0
                 root.appsMorph: 0
                 root.volumeMorph: 0
             }
@@ -482,6 +517,7 @@ Item {
                 root.width: root.targetW
                 root.wifiMorph: 0
                 root.btMorph: 0
+                root.batteryMorph: 0
                 root.appsMorph: 0
                 root.volumeMorph: 1
             }
@@ -493,6 +529,7 @@ Item {
                 root.width: root.targetW
                 root.wifiMorph: 1
                 root.btMorph: 0
+                root.batteryMorph: 0
                 root.appsMorph: 0
                 root.volumeMorph: 0
             }
@@ -504,6 +541,19 @@ Item {
                 root.width: root.targetW
                 root.wifiMorph: 0
                 root.btMorph: 1
+                root.batteryMorph: 0
+                root.appsMorph: 0
+                root.volumeMorph: 0
+            }
+        },
+        State {
+            name: "battery"
+
+            PropertyChanges {
+                root.width: root.targetW
+                root.wifiMorph: 0
+                root.btMorph: 0
+                root.batteryMorph: 1
                 root.appsMorph: 0
                 root.volumeMorph: 0
             }
@@ -515,6 +565,7 @@ Item {
                 root.width: root.targetW
                 root.wifiMorph: 0
                 root.btMorph: 0
+                root.batteryMorph: 0
                 root.appsMorph: 1
                 root.volumeMorph: 0
             }
@@ -590,6 +641,41 @@ Item {
 
                 NumberAnimation {
                     property: "btMorph"
+                    duration: 260
+                    easing.type: Easing.OutCubic
+                }
+            }
+        },
+        Transition {
+            to: "battery"
+
+            ParallelAnimation {
+                NumberAnimation {
+                    property: "width"
+                    duration: 340
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 0.7
+                }
+
+                NumberAnimation {
+                    property: "batteryMorph"
+                    duration: 440
+                    easing.type: Easing.OutCubic
+                }
+            }
+        },
+        Transition {
+            from: "battery"
+
+            ParallelAnimation {
+                NumberAnimation {
+                    property: "width"
+                    duration: 300
+                    easing.type: Easing.InOutCubic
+                }
+
+                NumberAnimation {
+                    property: "batteryMorph"
                     duration: 260
                     easing.type: Easing.OutCubic
                 }
@@ -679,7 +765,7 @@ Item {
             }
 
             NumberAnimation {
-                properties: "wifiMorph,btMorph,appsMorph,volumeMorph"
+                properties: "wifiMorph,btMorph,batteryMorph,appsMorph,volumeMorph"
                 duration: 200
                 easing.type: Easing.OutCubic
             }
