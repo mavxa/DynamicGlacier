@@ -48,12 +48,16 @@ Item {
     property real targetW: 0
     property real targetH: 0
     property int wifiMaxPanelHeight: 420
+    property int btMaxPanelHeight: 420
     property int appsMaxPanelHeight: 470
 
     // 0 = island, 1 = Wi-Fi manager. Animated by the morph transition and shared
     // with the content layer so shape and contents move as one.
     property real wifiMorph: 0
     readonly property real wifiPanelHeight: islandContent.wifiContentHeight
+
+    property real btMorph: 0
+    readonly property real btPanelHeight: islandContent.btContentHeight
 
     // Same idea for the favorites dock. Only one of the two morphs is ever
     // non-zero, since the island can only be in one panel mode at a time.
@@ -83,6 +87,10 @@ Item {
     property string wifiStatusText: ""
     property bool wifiConnecting: false
 
+    property bool btDiscovering: false
+    property var btDevices: []
+    property string btStatusText: ""
+
     property var favoriteAppEntries: []
     property var favoriteAppIds: []
     property var appsPickerEntries: []
@@ -105,6 +113,10 @@ Item {
     signal wifiConnectRequested(string ssid, bool secured)
     signal wifiDisconnectRequested(string ssid)
     signal wifiPasswordChanged(string text)
+    signal btCloseRequested
+    signal btToggleRadioRequested
+    signal btRefreshRequested
+    signal btDeviceRequested(var device)
     signal appsSettingsRequested
     signal appsCloseRequested
     signal appsPickerToggleRequested
@@ -319,9 +331,11 @@ Item {
             z: 10
             anchors.fill: parent
             // Padding relaxes to zero as a panel takes over — panels bring their own.
-            anchors.margins: root.expanded ? (root.mode === "media" ? 10 : 12) * (1 - root.wifiMorph) * (1 - root.appsMorph) * (1 - root.volumeMorph) : 0
+            anchors.margins: root.expanded ? (root.mode === "media" ? 10 : 12) * (1 - root.wifiMorph) * (1 - root.btMorph) * (1 - root.appsMorph) * (1 - root.volumeMorph) : 0
             wifiMorph: root.wifiMorph
             wifiMaxPanelHeight: root.wifiMaxPanelHeight
+            btMorph: root.btMorph
+            btMaxPanelHeight: root.btMaxPanelHeight
             appsMorph: root.appsMorph
             appsMaxPanelHeight: root.appsMaxPanelHeight
             volumeMorph: root.volumeMorph
@@ -360,6 +374,9 @@ Item {
             btConnected: root.btConnected
             btDeviceName: root.btDeviceName
             btBattery: root.btBattery
+            btDiscovering: root.btDiscovering
+            btDevices: root.btDevices
+            btStatusText: root.btStatusText
             timeText: root.timeText
             dateText: root.dateText
             wifiRadioEnabled: root.wifiRadioEnabled
@@ -389,6 +406,10 @@ Item {
             onWifiConnectRequested: (ssid, secured) => root.wifiConnectRequested(ssid, secured)
             onWifiDisconnectRequested: ssid => root.wifiDisconnectRequested(ssid)
             onWifiPasswordChanged: text => root.wifiPasswordChanged(text)
+            onBtCloseRequested: root.btCloseRequested()
+            onBtToggleRadioRequested: root.btToggleRadioRequested()
+            onBtRefreshRequested: root.btRefreshRequested()
+            onBtDeviceRequested: device => root.btDeviceRequested(device)
             onAppsSettingsRequested: root.appsSettingsRequested()
             onAppsCloseRequested: root.appsCloseRequested()
             onAppsPickerToggleRequested: root.appsPickerToggleRequested()
@@ -405,7 +426,7 @@ Item {
     // Height is a plain binding, not part of the state, so it can re-target while
     // the morph is still running — the network list usually lands mid-transition,
     // and the app picker drawer opens long after the morph has settled.
-    height: root.mode === "wifi" ? Math.max(root.targetH, root.wifiPanelHeight) : (root.mode === "apps" ? Math.max(root.targetH, root.appsPanelHeight) : root.targetH)
+    height: root.mode === "wifi" ? Math.max(root.targetH, root.wifiPanelHeight) : (root.mode === "bluetooth" ? Math.max(root.targetH, root.btPanelHeight) : (root.mode === "apps" ? Math.max(root.targetH, root.appsPanelHeight) : root.targetH))
 
     state: root.mode !== "idle" ? root.mode : (root.forceExpanded ? "peek" : "collapsed")
 
@@ -416,6 +437,7 @@ Item {
             PropertyChanges {
                 root.width: root.targetW
                 root.wifiMorph: 0
+                root.btMorph: 0
                 root.appsMorph: 0
                 root.volumeMorph: 0
             }
@@ -426,6 +448,7 @@ Item {
             PropertyChanges {
                 root.width: root.targetW
                 root.wifiMorph: 0
+                root.btMorph: 0
                 root.appsMorph: 0
                 root.volumeMorph: 0
             }
@@ -436,6 +459,7 @@ Item {
             PropertyChanges {
                 root.width: root.targetW
                 root.wifiMorph: 0
+                root.btMorph: 0
                 root.appsMorph: 0
                 root.volumeMorph: 0
             }
@@ -446,6 +470,7 @@ Item {
             PropertyChanges {
                 root.width: root.targetW
                 root.wifiMorph: 0
+                root.btMorph: 0
                 root.appsMorph: 0
                 root.volumeMorph: 0
             }
@@ -456,6 +481,7 @@ Item {
             PropertyChanges {
                 root.width: root.targetW
                 root.wifiMorph: 0
+                root.btMorph: 0
                 root.appsMorph: 0
                 root.volumeMorph: 1
             }
@@ -466,6 +492,18 @@ Item {
             PropertyChanges {
                 root.width: root.targetW
                 root.wifiMorph: 1
+                root.btMorph: 0
+                root.appsMorph: 0
+                root.volumeMorph: 0
+            }
+        },
+        State {
+            name: "bluetooth"
+
+            PropertyChanges {
+                root.width: root.targetW
+                root.wifiMorph: 0
+                root.btMorph: 1
                 root.appsMorph: 0
                 root.volumeMorph: 0
             }
@@ -476,6 +514,7 @@ Item {
             PropertyChanges {
                 root.width: root.targetW
                 root.wifiMorph: 0
+                root.btMorph: 0
                 root.appsMorph: 1
                 root.volumeMorph: 0
             }
@@ -516,6 +555,41 @@ Item {
 
                 NumberAnimation {
                     property: "wifiMorph"
+                    duration: 260
+                    easing.type: Easing.OutCubic
+                }
+            }
+        },
+        Transition {
+            to: "bluetooth"
+
+            ParallelAnimation {
+                NumberAnimation {
+                    property: "width"
+                    duration: 340
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 0.7
+                }
+
+                NumberAnimation {
+                    property: "btMorph"
+                    duration: 440
+                    easing.type: Easing.OutCubic
+                }
+            }
+        },
+        Transition {
+            from: "bluetooth"
+
+            ParallelAnimation {
+                NumberAnimation {
+                    property: "width"
+                    duration: 300
+                    easing.type: Easing.InOutCubic
+                }
+
+                NumberAnimation {
+                    property: "btMorph"
                     duration: 260
                     easing.type: Easing.OutCubic
                 }
@@ -605,7 +679,7 @@ Item {
             }
 
             NumberAnimation {
-                properties: "wifiMorph,appsMorph,volumeMorph"
+                properties: "wifiMorph,btMorph,appsMorph,volumeMorph"
                 duration: 200
                 easing.type: Easing.OutCubic
             }

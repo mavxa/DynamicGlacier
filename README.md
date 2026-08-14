@@ -176,8 +176,8 @@ bash uninstall.sh --yes
 - Collapsed `bump` can show current time plus track artwork/play indicator when media is active.
 - Tray indicators: circular battery charging chip, cava-style audio bars.
 - Subtle open U-shaped trace for volume and brightness changes.
-- WiFi status (signal strength + SSID) and Bluetooth (device name + battery %) in idle mode.
-- Click WiFi/BT to open settings (nmtui / bluedevil-wizard).
+- Wi-Fi status and a built-in `nmcli` network manager with saved-profile reconnects.
+- Native BlueZ Bluetooth panel with radio toggle, discovery, device connect/disconnect, and battery status.
 - Battery icon + percentage on hover through UPower.
 - Microphone and camera privacy dots with separate colors and non-overlapping layout.
 - PipeWire privacy detection plus local fallbacks for `pactl` microphone streams and `/dev/video*` camera users.
@@ -217,12 +217,9 @@ Colors are defined inline in `IslandSurface.qml` and `IslandContent.qml`:
 - `microphoneIndicatorColor`: mic privacy dot (`#ff9f1a`)
 - `cameraIndicatorColor`: camera privacy dot (`#35ff72`)
 
-Wi-Fi management is built into the island and uses `nmcli`. To change the
-external Bluetooth settings app, edit this handler in `DynamicGlacier.qml`:
-
-```qml
-onBtSettingsRequested: btSettingsProc.exec(["bluedevil-wizard"])
-```
+Wi-Fi management uses `nmcli`. Bluetooth uses Quickshell's native BlueZ service,
+so device names, connection state, discovery, and battery updates stay reactive
+without polling `bluetoothctl`.
 
 </details>
 
@@ -276,6 +273,7 @@ quickshell ipc --path quickshell call dynamicGlacier privacy true true
 quickshell ipc --path quickshell call dynamicGlacier privacyLive
 quickshell ipc --path quickshell call dynamicGlacier toggleHandle
 quickshell ipc --path quickshell call dynamicGlacier live true
+quickshell ipc --path quickshell call dynamicGlacier bluetooth
 quickshell ipc --path quickshell call dynamicGlacier idle
 ```
 

@@ -36,6 +36,7 @@ Current live adapters:
 - PipeWire default sink volume/mute changes
 - PipeWire link groups plus small shell fallbacks for microphone/video privacy activity
 - UPower battery state/threshold changes
+- BlueZ Bluetooth adapter and device changes through `Quickshell.Bluetooth`
 
 Volume is intentionally not a full expanded island mode while end-4's OSD is active. It should be a quiet open U-shaped trace just inside the current island perimeter, with no top connection.
 

@@ -1,6 +1,7 @@
 import QtQml.Models
 import QtQuick
 import Quickshell
+import Quickshell.Bluetooth
 import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Services.Mpris
@@ -77,6 +78,9 @@ Scope {
     // up to wifiMaxPanelHeight.
     readonly property int wifiMinHeight: 132
     readonly property int wifiMaxPanelHeight: 420
+    readonly property int btWidth: 340
+    readonly property int btMinHeight: 132
+    readonly property int btMaxPanelHeight: 420
     readonly property int appsWidth: 340
     readonly property int appsMinHeight: 132
     readonly property int appsMaxPanelHeight: 470
@@ -123,11 +127,17 @@ Scope {
     property bool wifiConnecting: false
     property double lastWifiScanAt: 0
 
-    // Bluetooth
-    property string btDeviceName: ""
-    property int btBattery: -1
-    readonly property bool btEnabled: true
-    readonly property bool btConnected: root.btDeviceName !== ""
+    // Bluetooth manager. Quickshell talks to BlueZ directly, so the panel and
+    // compact status stay reactive without polling bluetoothctl through a shell.
+    readonly property var btAdapter: Bluetooth.defaultAdapter
+    readonly property var btDevices: root.sortedBluetoothDevices()
+    readonly property var btConnectedDevice: root.btDevices.find(device => device.connected) ?? null
+    readonly property bool btEnabled: root.btAdapter?.enabled ?? false
+    readonly property bool btConnected: root.btConnectedDevice !== null
+    readonly property string btDeviceName: root.btConnectedDevice?.name || root.btConnectedDevice?.deviceName || ""
+    readonly property int btBattery: root.btConnectedDevice?.batteryAvailable ? Math.round(root.btConnectedDevice.battery * 100) : -1
+    readonly property bool btDiscovering: root.btAdapter?.discovering ?? false
+    property string btStatusText: ""
 
     // App favorites dock (morphs the island into mode "apps")
     readonly property int appsFavoriteSlots: 8
@@ -153,6 +163,8 @@ Scope {
             return root.volumeWidth;
         case "wifi":
             return root.wifiWidth;
+        case "bluetooth":
+            return root.btWidth;
         case "apps":
             return root.appsWidth;
         default:
@@ -172,6 +184,8 @@ Scope {
             return root.volumeHeight;
         case "wifi":
             return root.wifiMinHeight;
+        case "bluetooth":
+            return root.btMinHeight;
         case "apps":
             return root.appsMinHeight;
         default:
@@ -201,7 +215,7 @@ Scope {
     function scheduleInteractionClose() {
         // Detail panels are hover-owned even when the idle island was pinned.
         // Keeping the pinned state only applies to the compact idle peek.
-        if (root.mode === "wifi" || root.mode === "apps" || !root.pinnedOpen)
+        if (root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "apps" || !root.pinnedOpen)
             hoverLeaveTimer.restart();
     }
 
@@ -228,6 +242,9 @@ Scope {
     }
 
     function showIdle() {
+        if (root.mode === "bluetooth" && root.btAdapter?.discovering)
+            root.btAdapter.discovering = false;
+
         collapseTimer.stop();
         root.mode = "idle";
         root.pinnedOpen = false;
@@ -242,6 +259,7 @@ Scope {
         root.wifiExpandedSsid = "";
         root.wifiPasswordDraft = "";
         root.wifiStatusText = "";
+        root.btStatusText = "";
 
         if (root.liveLinksEnabled) {
             root.chooseActivePlayer(null);
@@ -820,6 +838,69 @@ Scope {
         root.wifiSignal = 0;
     }
 
+    function bluetoothDeviceName(device) {
+        return device?.name || device?.deviceName || device?.address || "Unknown device";
+    }
+
+    function sortedBluetoothDevices() {
+        const devices = root.btAdapter?.devices.values ?? [];
+
+        return devices.slice().sort((a, b) => {
+            if (a.connected !== b.connected)
+                return a.connected ? -1 : 1;
+            if (a.paired !== b.paired)
+                return a.paired ? -1 : 1;
+
+            return root.bluetoothDeviceName(a).localeCompare(root.bluetoothDeviceName(b));
+        });
+    }
+
+    function toggleBluetoothPanel() {
+        if (root.mode === "bluetooth") {
+            root.showIdle();
+            return;
+        }
+
+        collapseTimer.stop();
+        root.mode = "bluetooth";
+        root.btStatusText = root.btAdapter ? "" : "No Bluetooth adapter";
+
+        if (root.btEnabled)
+            root.btAdapter.discovering = true;
+    }
+
+    function toggleBluetoothRadio() {
+        if (!root.btAdapter) {
+            root.btStatusText = "No Bluetooth adapter";
+            return;
+        }
+
+        const nextState = !root.btAdapter.enabled;
+        root.btStatusText = "";
+        root.btAdapter.enabled = nextState;
+        root.btAdapter.discovering = nextState;
+    }
+
+    function refreshBluetoothDevices() {
+        if (!root.btAdapter || !root.btAdapter.enabled)
+            return;
+
+        root.btStatusText = "";
+        root.btAdapter.discovering = true;
+    }
+
+    function toggleBluetoothDevice(device) {
+        if (!device)
+            return;
+
+        root.btStatusText = "";
+
+        if (device.connected)
+            device.disconnect();
+        else
+            device.connect();
+    }
+
     function parentDirectory(path) {
         const separator = path.lastIndexOf("/");
 
@@ -1012,7 +1093,7 @@ Scope {
         onTriggered: {
             root.pointerInside = false;
 
-            if (root.mode === "wifi" || root.mode === "apps")
+            if (root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "apps")
                 root.showIdle();
         }
     }
@@ -1125,10 +1206,6 @@ Scope {
         stdout: StdioCollector {
             onStreamFinished: root.updatePolledPrivacy(text)
         }
-    }
-
-    Process {
-        id: btSettingsProc
     }
 
     Timer {
@@ -1252,18 +1329,6 @@ Scope {
         }
     }
 
-    Process {
-        id: btPollProc
-
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const parts = text.trim().split("\t");
-                root.btDeviceName = parts[0] || "";
-                root.btBattery = parts.length > 1 ? parseInt(parts[1]) || -1 : -1;
-            }
-        }
-    }
-
     Timer {
         interval: 3000
         repeat: true
@@ -1272,8 +1337,6 @@ Scope {
         onTriggered: {
             if (!wifiPollProc.running)
                 wifiPollProc.exec(["nmcli", "-t", "-f", "active,ssid,signal", "dev", "wifi"]);
-            if (!btPollProc.running)
-                btPollProc.exec(["sh", "-c", "dev=$(bluetoothctl devices Connected 2>/dev/null | head -1 | cut -d' ' -f3-); [ -z \"$dev\" ] && printf '\\t\\n' && exit 0; bat=$(bluetoothctl info 2>/dev/null | sed -n 's/.*Battery Percentage: 0x[0-9a-f]* (\\([0-9]*\\)).*/\\1/p'); printf '%s\\t%s\\n' \"$dev\" \"$bat\""]);
         }
     }
 
@@ -1347,7 +1410,7 @@ Scope {
         // Tall enough for the tallest expanded panel so the morph never clips.
         // The surface is transparent and input is limited to `mask`, so the extra
         // room costs nothing.
-        implicitHeight: Math.max(root.windowHeight, root.wifiMaxPanelHeight + 32, root.appsMaxPanelHeight + 32)
+        implicitHeight: Math.max(root.windowHeight, root.wifiMaxPanelHeight + 32, root.btMaxPanelHeight + 32, root.appsMaxPanelHeight + 32)
         visible: true
 
         WlrLayershell.namespace: "dynamic-glacier"
@@ -1404,6 +1467,7 @@ Scope {
                 targetW: root.targetWidth()
                 targetH: root.targetHeight()
                 wifiMaxPanelHeight: root.wifiMaxPanelHeight
+                btMaxPanelHeight: root.btMaxPanelHeight
                 mode: root.visualMode
                 handleStyle: root.handleStyle
                 forceExpanded: root.interactionOpen
@@ -1439,6 +1503,9 @@ Scope {
                 btConnected: root.btConnected
                 btDeviceName: root.btDeviceName
                 btBattery: root.btBattery
+                btDiscovering: root.btDiscovering
+                btDevices: root.btDevices
+                btStatusText: root.btStatusText
                 timeText: root.hoverTimeText
                 dateText: root.hoverDateText
                 wifiRadioEnabled: root.wifiRadioEnabled
@@ -1472,6 +1539,10 @@ Scope {
                 onWifiConnectRequested: (ssid, secured) => root.connectToWifiNetwork(ssid, secured)
                 onWifiDisconnectRequested: ssid => root.disconnectFromWifiNetwork(ssid)
                 onWifiPasswordChanged: text => root.wifiPasswordDraft = text
+                onBtCloseRequested: root.showIdle()
+                onBtToggleRadioRequested: root.toggleBluetoothRadio()
+                onBtRefreshRequested: root.refreshBluetoothDevices()
+                onBtDeviceRequested: device => root.toggleBluetoothDevice(device)
                 onAppsSettingsRequested: root.toggleAppsPanel()
                 onAppsCloseRequested: root.showIdle()
                 onAppsPickerToggleRequested: root.toggleAppsPicker()
@@ -1479,7 +1550,7 @@ Scope {
                 onAppsSearchAccepted: root.launchTopSearchMatch()
                 onAppsFavoriteToggleRequested: id => root.toggleFavoriteApp(id)
                 onAppsLaunchRequested: id => root.launchFavoriteApp(id)
-                onBtSettingsRequested: btSettingsProc.exec(["bluedevil-wizard"])
+                onBtSettingsRequested: root.toggleBluetoothPanel()
                 onSeekRequested: position => root.mediaSeek(position)
                 onHandleStyleRequested: style => root.setHandleStyle(style)
             }
@@ -1632,7 +1703,7 @@ Scope {
                 width: island.width
                 height: root.mode === "idle" && !root.interactionOpen ? Math.max(root.reservedZone, island.height) : island.height
                 hoverEnabled: true
-                acceptedButtons: root.visualMode === "media" || root.visualMode === "wifi" || root.visualMode === "apps" || root.interactionOpen ? Qt.NoButton : Qt.LeftButton
+                acceptedButtons: root.visualMode === "media" || root.visualMode === "wifi" || root.visualMode === "bluetooth" || root.visualMode === "apps" || root.interactionOpen ? Qt.NoButton : Qt.LeftButton
                 cursorShape: Qt.PointingHandCursor
                 onEntered: root.keepInteractionOpen(true)
                 onExited: {
@@ -1698,6 +1769,10 @@ Scope {
 
         function apps(): void {
             root.toggleAppsPanel();
+        }
+
+        function bluetooth(): void {
+            root.toggleBluetoothPanel();
         }
 
         function demo(): void {

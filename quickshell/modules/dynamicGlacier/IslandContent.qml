@@ -38,6 +38,9 @@ Item {
     property bool btConnected: false
     property string btDeviceName: ""
     property int btBattery: -1
+    property bool btDiscovering: false
+    property var btDevices: []
+    property string btStatusText: ""
     property string timeText: ""
     property string dateText: ""
     property string fontFamily: "Noto Sans"
@@ -69,6 +72,12 @@ Item {
     readonly property int wifiPlaceholderHeight: 58
     readonly property real wifiBodyHeight: root.wifiRadioEnabled && root.wifiNetworks.length > 0 ? wifiNetworkColumn.implicitHeight : root.wifiPlaceholderHeight
     readonly property real wifiContentHeight: Math.min(root.wifiMaxPanelHeight, root.wifiPanelPadding * 2 + root.wifiHeaderHeight + root.wifiSectionSpacing + root.wifiBodyHeight)
+
+    // Bluetooth uses the same surface morph as the other control panels, while
+    // its layout stays isolated in BluetoothPanel.qml.
+    property real btMorph: 0
+    property int btMaxPanelHeight: 420
+    readonly property real btContentHeight: btContent.contentHeight
 
     property var favoriteAppEntries: []
     property var favoriteAppIds: []
@@ -121,10 +130,10 @@ Item {
     readonly property int favoriteAppCount: root.favoriteAppIds.length
 
     // Only one panel morph is ever non-zero, so the peek can react to whichever is running.
-    readonly property real panelMorph: Math.max(root.wifiMorph, root.appsMorph)
+    readonly property real panelMorph: Math.max(root.wifiMorph, root.btMorph, root.appsMorph)
 
     // The peek stays mounted through the morph so it can fade/shrink into the panel.
-    readonly property bool peekVisible: (root.mode === "idle" && root.forceExpanded) || root.mode === "wifi" || root.mode === "apps"
+    readonly property bool peekVisible: (root.mode === "idle" && root.forceExpanded) || root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "apps"
     readonly property real peekMorphOpacity: 1 - Math.min(1, root.panelMorph / 0.45)
     readonly property real wifiPanelProgress: Math.max(0, Math.min(1, (root.wifiMorph - 0.22) / 0.78))
     readonly property real appsPanelProgress: Math.max(0, Math.min(1, (root.appsMorph - 0.22) / 0.78))
@@ -143,6 +152,10 @@ Item {
     signal wifiConnectRequested(string ssid, bool secured)
     signal wifiDisconnectRequested(string ssid)
     signal wifiPasswordChanged(string text)
+    signal btCloseRequested
+    signal btToggleRadioRequested
+    signal btRefreshRequested
+    signal btDeviceRequested(var device)
     signal appsSettingsRequested
     signal appsCloseRequested
     signal appsPickerToggleRequested
@@ -901,6 +914,24 @@ Item {
                 }
             }
         }
+    }
+
+    BluetoothPanel {
+        id: btContent
+
+        anchors.fill: parent
+        radioEnabled: root.btEnabled
+        discovering: root.btDiscovering
+        devices: root.btDevices
+        connectedDeviceName: root.btDeviceName
+        statusText: root.btStatusText
+        fontFamily: root.fontFamily
+        morph: root.btMorph
+        maxPanelHeight: root.btMaxPanelHeight
+        onCloseRequested: root.btCloseRequested()
+        onToggleRadioRequested: root.btToggleRadioRequested()
+        onRefreshRequested: root.btRefreshRequested()
+        onDeviceRequested: device => root.btDeviceRequested(device)
     }
 
     Item {
