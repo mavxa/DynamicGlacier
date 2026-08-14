@@ -26,14 +26,14 @@ Item {
 
     readonly property color primaryText: "#f7f7f7"
     readonly property color secondaryText: "#777777"
-    readonly property int panelPadding: 14
-    readonly property int headerHeight: 30
+    readonly property int panelPadding: 16
+    readonly property int headerHeight: 32
     readonly property int overviewHeight: 70
     readonly property int tileHeight: 54
     readonly property int footerHeight: 12
     readonly property int sectionSpacing: 10
     readonly property int gridSpacing: 6
-    readonly property real contentHeight: root.panelPadding * 2 + root.headerHeight + root.sectionSpacing + root.overviewHeight + root.sectionSpacing + root.tileHeight * 2 + root.gridSpacing + root.sectionSpacing + root.footerHeight
+    readonly property real contentHeight: root.panelPadding * 2 + root.headerHeight + root.sectionSpacing + root.overviewHeight + root.sectionSpacing + root.tileHeight + root.sectionSpacing + root.footerHeight
     readonly property real panelProgress: Math.max(0, Math.min(1, (root.morph - 0.22) / 0.78))
 
     signal closeRequested
@@ -219,7 +219,7 @@ Item {
         GridLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            columns: 2
+            columns: 4
             columnSpacing: root.gridSpacing
             rowSpacing: root.gridSpacing
 
@@ -242,7 +242,7 @@ Item {
                     },
                     {
                         icon: "battery_saver",
-                        label: root.thresholdSupported && root.thresholdStart >= 0 && root.thresholdEnd > 0 ? "Charge limit · " + root.thresholdStart + "→" + root.thresholdEnd : "Charge limit",
+                        label: root.thresholdSupported && root.thresholdStart >= 0 && root.thresholdEnd > 0 ? "Limit · " + root.thresholdStart + "→" + root.thresholdEnd : "Charge limit",
                         value: root.thresholdSupported && root.thresholdEnd > 0 ? root.thresholdEnd + "% " + (root.thresholdEnabled ? "on" : "off") : "Unsupported",
                         action: "threshold"
                     }

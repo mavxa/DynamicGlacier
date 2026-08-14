@@ -79,11 +79,11 @@ Item {
     property int wifiMaxPanelHeight: 420
 
     // Wi-Fi panel metrics — kept as tokens so the surface can size itself to the list.
-    readonly property int wifiPanelPadding: 14
-    readonly property int wifiHeaderHeight: 30
-    readonly property int wifiSectionSpacing: 10
-    readonly property int wifiRowHeight: 36
-    readonly property int wifiRowSpacing: 4
+    readonly property int wifiPanelPadding: 16
+    readonly property int wifiHeaderHeight: 32
+    readonly property int wifiSectionSpacing: 12
+    readonly property int wifiRowHeight: 42
+    readonly property int wifiRowSpacing: 6
     readonly property int wifiPlaceholderHeight: 58
     readonly property real wifiBodyHeight: root.wifiRadioEnabled && root.wifiNetworks.length > 0 ? wifiNetworkColumn.implicitHeight : root.wifiPlaceholderHeight
     readonly property real wifiContentHeight: Math.min(root.wifiMaxPanelHeight, root.wifiPanelPadding * 2 + root.wifiHeaderHeight + root.wifiSectionSpacing + root.wifiBodyHeight)
@@ -718,8 +718,8 @@ Item {
 
                             ColumnLayout {
                                 anchors.fill: parent
-                                anchors.leftMargin: 10
-                                anchors.rightMargin: 10
+                                anchors.leftMargin: 12
+                                anchors.rightMargin: 12
                                 anchors.bottomMargin: wifiRowItem.expanded ? 10 : 0
                                 spacing: 0
 
@@ -794,7 +794,7 @@ Item {
                                     Rectangle {
                                         visible: !wifiRowItem.modelData.active && wifiRowItem.modelData.secured
                                         Layout.fillWidth: true
-                                        Layout.preferredHeight: 30
+                                        Layout.preferredHeight: 34
                                         radius: 10
                                         color: "#090909"
                                         border.width: 1
@@ -844,7 +844,7 @@ Item {
 
                                         Rectangle {
                                             Layout.fillWidth: true
-                                            Layout.preferredHeight: 28
+                                            Layout.preferredHeight: 30
                                             radius: 10
                                             color: wifiCancelMouse.containsMouse ? "#151515" : "#090909"
                                             border.width: 1
@@ -871,7 +871,7 @@ Item {
 
                                         Rectangle {
                                             Layout.fillWidth: true
-                                            Layout.preferredHeight: 28
+                                            Layout.preferredHeight: 30
                                             radius: 10
                                             color: wifiRowItem.modelData.active ? "#1a0f0f" : (root.wifiConnecting ? "#8a8a8a" : "#f0f0f0")
                                             border.width: 1

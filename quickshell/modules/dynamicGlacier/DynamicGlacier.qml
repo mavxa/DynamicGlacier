@@ -73,15 +73,15 @@ Scope {
     readonly property int mediaHeight: 132
     readonly property int volumeWidth: 244
     readonly property int volumeHeight: 48
-    readonly property int wifiWidth: 340
+    readonly property int wifiWidth: 500
     // Floor for the Wi-Fi panel; the island grows past it to fit the network list,
     // up to wifiMaxPanelHeight.
     readonly property int wifiMinHeight: 132
-    readonly property int wifiMaxPanelHeight: 420
-    readonly property int btWidth: 340
+    readonly property int wifiMaxPanelHeight: 440
+    readonly property int btWidth: 500
     readonly property int btMinHeight: 132
-    readonly property int btMaxPanelHeight: 420
-    readonly property int batteryWidth: 360
+    readonly property int btMaxPanelHeight: 440
+    readonly property int batteryWidth: 500
     readonly property int batteryMinHeight: 132
     readonly property int appsWidth: 340
     readonly property int appsMinHeight: 132
@@ -2026,6 +2026,10 @@ Scope {
 
         function apps(): void {
             root.toggleAppsPanel();
+        }
+
+        function wifi(): void {
+            root.toggleWifiPanel();
         }
 
         function bluetooth(): void {

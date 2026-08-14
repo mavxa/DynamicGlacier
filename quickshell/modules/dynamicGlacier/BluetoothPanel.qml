@@ -15,13 +15,16 @@ Item {
     property int maxPanelHeight: 420
 
     readonly property color primaryText: "#f7f7f7"
-    readonly property int panelPadding: 14
-    readonly property int headerHeight: 30
-    readonly property int sectionSpacing: 10
-    readonly property int rowHeight: 42
-    readonly property int rowSpacing: 4
+    readonly property int panelPadding: 16
+    readonly property int headerHeight: 32
+    readonly property int sectionSpacing: 12
+    readonly property int columnCount: 2
+    readonly property int rowHeight: 52
+    readonly property int rowSpacing: 6
+    readonly property int columnSpacing: 6
     readonly property int placeholderHeight: 58
-    readonly property real bodyHeight: root.radioEnabled && root.devices.length > 0 ? deviceColumn.implicitHeight : root.placeholderHeight
+    readonly property int deviceRowCount: Math.ceil(root.devices.length / root.columnCount)
+    readonly property real bodyHeight: root.radioEnabled && root.devices.length > 0 ? root.deviceRowCount * root.rowHeight + Math.max(0, root.deviceRowCount - 1) * root.rowSpacing : root.placeholderHeight
     readonly property real contentHeight: Math.min(root.maxPanelHeight, root.panelPadding * 2 + root.headerHeight + root.sectionSpacing + root.bodyHeight)
     readonly property real panelProgress: Math.max(0, Math.min(1, (root.morph - 0.22) / 0.78))
 
@@ -213,15 +216,17 @@ Item {
             Layout.fillHeight: true
             clip: true
             interactive: contentHeight > height
-            contentHeight: deviceColumn.height
+            contentHeight: deviceGrid.implicitHeight
             boundsBehavior: Flickable.StopAtBounds
             visible: root.radioEnabled && root.devices.length > 0
 
-            ColumnLayout {
-                id: deviceColumn
+            GridLayout {
+                id: deviceGrid
 
                 width: deviceList.width
-                spacing: root.rowSpacing
+                columns: root.columnCount
+                columnSpacing: root.columnSpacing
+                rowSpacing: root.rowSpacing
 
                 Repeater {
                     model: root.devices
@@ -236,6 +241,7 @@ Item {
                         readonly property real appear: Math.max(0, Math.min(1, (root.morph - Math.min(index, 6) * 0.045) / 0.55))
 
                         Layout.fillWidth: true
+                        Layout.preferredWidth: (deviceList.width - root.columnSpacing) / root.columnCount
                         Layout.preferredHeight: root.rowHeight
                         radius: 13
                         color: modelData.connected ? "#0a0a0a" : (deviceMouse.containsMouse ? "#101010" : "transparent")
@@ -247,8 +253,8 @@ Item {
 
                         RowLayout {
                             anchors.fill: parent
-                            anchors.leftMargin: 10
-                            anchors.rightMargin: 10
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
                             spacing: 9
 
                             MIcon {
