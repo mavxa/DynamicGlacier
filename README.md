@@ -166,18 +166,28 @@ bash uninstall.sh --yes
 
 <table>
   <tr>
-    <td width="50%"><img src="public/idle.jpg" alt="Expanded idle state"></td>
+    <td width="50%"><img src="public/bump.jpg" alt="Collapsed bump handle"></td>
     <td width="50%"><img src="public/strip.jpg" alt="Minimal strip handle"></td>
   </tr>
   <tr>
-    <td align="center"><sub>Expanded idle state</sub></td>
+    <td align="center"><sub>Collapsed bump handle</sub></td>
     <td align="center"><sub>Minimal strip handle</sub></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="public/media.jpg" alt="OLED-black media player"></td>
+    <td><img src="public/bumpmedia.jpg" alt="Bump handle with media activity"></td>
+    <td><img src="public/bumpprivate.jpg" alt="Bump handle with camera and microphone privacy indicators"></td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><sub>Media player</sub></td>
+    <td align="center"><sub>Media activity</sub></td>
+    <td align="center"><sub>Camera and microphone privacy activity</sub></td>
+  </tr>
+  <tr>
+    <td><img src="public/idle.jpg" alt="Expanded idle state"></td>
+    <td><img src="public/media.jpg" alt="OLED-black media player"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Expanded idle state</sub></td>
+    <td align="center"><sub>Media player</sub></td>
   </tr>
 </table>
 
