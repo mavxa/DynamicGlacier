@@ -11,10 +11,12 @@ RowLayout {
     property string statusText: ""
     property string fontFamily: "Noto Sans"
     property bool showBattery: false
+    property bool showSettings: true
     property bool compact: false
 
     signal handleStyleRequested(string style)
     signal batteryRequested
+    signal settingsRequested
 
     Layout.fillWidth: true
     Layout.preferredHeight: root.compact ? 15 : 17
@@ -112,6 +114,35 @@ RowLayout {
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: root.batteryRequested()
+        }
+    }
+
+    Rectangle {
+        visible: root.showSettings
+        Layout.preferredWidth: root.compact ? 17 : 19
+        Layout.preferredHeight: root.compact ? 17 : 19
+        radius: width / 2
+        color: settingsMouse.containsMouse ? "#1a1a1a" : "transparent"
+
+        MIcon {
+            anchors.centerIn: parent
+            name: "settings"
+            size: root.compact ? 12 : 13
+            color: settingsMouse.containsMouse ? "#f0f0f0" : "#8a8a8a"
+        }
+
+        MouseArea {
+            id: settingsMouse
+
+            anchors.fill: parent
+            anchors.margins: -3
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.settingsRequested()
+        }
+
+        Behavior on color {
+            ColorAnimation { duration: 140 }
         }
     }
 }

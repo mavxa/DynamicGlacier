@@ -1,8 +1,19 @@
 # Dynamic Glacier
 
-Dynamic Glacier is a native QML/Quickshell island widget for Hyprland.
+Dynamic Glacier is a native QML/Quickshell control island for Hyprland.
 
-It is built for Linux desktops that want a compact, OLED-friendly top-center surface without Electron, webviews, AGS, EWW, or a JS/HTML/CSS UI stack. The idle state is a small black handle; it expands on hover, click, or useful desktop activity.
+It keeps media, Wi-Fi, Bluetooth, battery health, favorite apps, privacy activity,
+and lightweight desktop feedback in one animated top-center surface. The default
+look stays compact and OLED-friendly; an experimental Liquid Glass mode adds
+real compositor-backed transparency and blur when you want the desktop to show
+through.
+
+No Electron, webview, AGS, EWW, or JS/HTML/CSS UI stack — just Quickshell,
+QtQuick, and native Linux services.
+
+<p align="center">
+  <img src="public/idlelg.jpg" alt="Dynamic Glacier with experimental Liquid Glass enabled" width="100%">
+</p>
 
 ## Install
 
@@ -151,12 +162,66 @@ bash uninstall.sh --yes
 ## Preview
 
 <details open>
-<summary><b>Screenshots</b></summary>
+<summary><b>Default OLED-black design</b></summary>
 
-![idle](public/DynamicGlacier.png)
-![player](public/DynamicGlacier2.png)
-![playerHover](public/DynamicGlacier3.png)
-![privacy](public/DynamicGlacier4.png)
+<table>
+  <tr>
+    <td width="50%"><img src="public/idle.jpg" alt="Expanded idle state"></td>
+    <td width="50%"><img src="public/strip.jpg" alt="Minimal strip handle"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Expanded idle state</sub></td>
+    <td align="center"><sub>Minimal strip handle</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="public/media.jpg" alt="OLED-black media player"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><sub>Media player</sub></td>
+  </tr>
+</table>
+
+</details>
+
+<details open>
+<summary><b>Experimental Liquid Glass</b></summary>
+
+Liquid Glass uses Hyprland's real backdrop blur with a translucent QML surface.
+It can be enabled from Glacier settings and applies consistently to every state.
+
+<table>
+  <tr>
+    <td width="50%"><img src="public/medialg.jpg" alt="Liquid Glass media player"></td>
+    <td width="50%"><img src="public/settingslg.jpg" alt="Dynamic Glacier settings"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Media</sub></td>
+    <td align="center"><sub>Settings</sub></td>
+  </tr>
+  <tr>
+    <td><img src="public/wifilg.jpg" alt="Liquid Glass Wi-Fi manager"></td>
+    <td><img src="public/bluetoothlg.jpg" alt="Liquid Glass Bluetooth manager"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Wi-Fi</sub></td>
+    <td align="center"><sub>Bluetooth</sub></td>
+  </tr>
+  <tr>
+    <td><img src="public/batterylg.jpg" alt="Liquid Glass battery panel"></td>
+    <td><img src="public/favoriteslg.jpg" alt="Liquid Glass favorite apps"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Battery health and power profiles</sub></td>
+    <td align="center"><sub>Favorite apps</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="public/soundlg.jpg" alt="Liquid Glass volume feedback"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><sub>Volume feedback</sub></td>
+  </tr>
+</table>
+
 
 </details>
 
@@ -167,6 +232,7 @@ bash uninstall.sh --yes
 
 - Pure-black top-center island for Hyprland.
 - OLED-friendly idle handle with `bump` and barely visible `strip` modes.
+- Optional experimental Liquid Glass across every Glacier state, backed by Hyprland blur rather than a flat translucent color.
 - Anti-corner notch smoothly merging island into screen edge.
 - Hover expansion that can overlap windows instead of constantly resizing the Hyprland layout.
 - Small constant reserved zone, so normal windows do not jump around.
@@ -179,6 +245,9 @@ bash uninstall.sh --yes
 - Wi-Fi status and a built-in `nmcli` network manager with saved-profile reconnects.
 - Native BlueZ Bluetooth panel with radio toggle, discovery, device connect/disconnect, and battery status.
 - Clickable battery panel with health, cycles, capacity, voltage, the hardware-supported UPower charge limit, and system power-profile switching.
+- In-island settings for Liquid Glass and idle width/height, saved automatically between restarts.
+- Persistent `bump` / `strip` selection.
+- Settings access from idle, media, Wi-Fi, Bluetooth, battery, favorites, and notification states.
 - Microphone and camera privacy dots with separate colors and non-overlapping layout.
 - PipeWire privacy detection plus local fallbacks for `pactl` microphone streams and `/dev/video*` camera users.
 - Minimalist pill toggle for bump/strip mode switching.
@@ -189,7 +258,14 @@ bash uninstall.sh --yes
 <details>
 <summary><b>Customization</b></summary>
 
-All customizable properties live in `quickshell/modules/dynamicGlacier/DynamicGlacier.qml`. You can change these without breaking anything:
+Open the gear inside Glacier to toggle experimental Liquid Glass, resize the
+expanded idle surface, or reset the visual settings. Changes are saved
+automatically in Quickshell's per-config state directory.
+
+The `bump` / `strip` handle selector lives in the idle and media headers and is
+persisted through the same settings store.
+
+Additional defaults live in `quickshell/modules/dynamicGlacier/DynamicGlacier.qml`:
 
 | Property | Default | Description |
 |----------|---------|-------------|
@@ -206,6 +282,9 @@ All customizable properties live in `quickshell/modules/dynamicGlacier/DynamicGl
 | `notifyHeight` | `74` | Height of notification state |
 | `mediaWidth` | `380` | Width of media player state |
 | `mediaHeight` | `132` | Height of media player state |
+| `wifiWidth` | `500` | Width of the Wi-Fi manager |
+| `btWidth` | `500` | Width of the Bluetooth manager |
+| `batteryWidth` | `500` | Width of the battery panel |
 | `reservedZone` | `24` (bump) / `0` (strip) | Top exclusive zone reserved for the island |
 | `windowHeight` | `136` | Total window height for the layer surface |
 
@@ -227,7 +306,7 @@ without polling `bluetoothctl`.
 <summary><b>Planned / possible later</b></summary>
 
 - Notification bridge that does not fight existing end-4 notification services.
-- User config file for sizes, colors, modules, and timeout behavior.
+- More settings for modules, colors, and timeout behavior.
 - More detailed privacy labels for active microphone/camera clients.
 - Long-running progress state for commands, downloads, and file operations.
 - VPN/network, DND, timer, and calendar activity states.
@@ -273,8 +352,13 @@ quickshell ipc --path quickshell call dynamicGlacier privacy true true
 quickshell ipc --path quickshell call dynamicGlacier privacyLive
 quickshell ipc --path quickshell call dynamicGlacier toggleHandle
 quickshell ipc --path quickshell call dynamicGlacier live true
+quickshell ipc --path quickshell call dynamicGlacier wifi
 quickshell ipc --path quickshell call dynamicGlacier bluetooth
 quickshell ipc --path quickshell call dynamicGlacier battery
+quickshell ipc --path quickshell call dynamicGlacier apps
+quickshell ipc --path quickshell call dynamicGlacier settings
+quickshell ipc --path quickshell call dynamicGlacier liquidGlass true
+quickshell ipc --path quickshell call dynamicGlacier idleSize 360 140
 quickshell ipc --path quickshell call dynamicGlacier batteryLimit true
 quickshell ipc --path quickshell call dynamicGlacier batteryLimit false
 quickshell ipc --path quickshell call dynamicGlacier powerProfile power-saver

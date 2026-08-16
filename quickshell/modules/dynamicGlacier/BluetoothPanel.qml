@@ -29,6 +29,7 @@ Item {
     readonly property real panelProgress: Math.max(0, Math.min(1, (root.morph - 0.22) / 0.78))
 
     signal closeRequested
+    signal settingsRequested
     signal toggleRadioRequested
     signal refreshRequested
     signal deviceRequested(var device)
@@ -153,6 +154,31 @@ Item {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.toggleRadioRequested()
+                }
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 20
+                Layout.preferredHeight: 20
+                radius: 10
+                color: settingsMouse.containsMouse ? "#1a1a1a" : "#0a0a0a"
+                border.width: 1
+                border.color: "#232323"
+
+                MIcon {
+                    anchors.centerIn: parent
+                    name: "settings"
+                    size: 12
+                    color: "#999999"
+                }
+
+                MouseArea {
+                    id: settingsMouse
+
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.settingsRequested()
                 }
             }
 

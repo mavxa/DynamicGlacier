@@ -28,6 +28,9 @@ Item {
     property bool forceExpanded: false
     property bool mediaAvailable: false
     property string handleStyle: "bump"
+    property bool liquidGlassEnabled: false
+    property int idleWidth: 340
+    property int idleHeight: 132
     property string batteryHoverText: ""
     property bool batteryCharging: false
     property int batteryLevel: 0
@@ -104,6 +107,9 @@ Item {
     property real batteryMorph: 0
     readonly property real batteryContentHeight: batteryContent.contentHeight
 
+    property real settingsMorph: 0
+    readonly property real settingsContentHeight: settingsContent.contentHeight
+
     property var favoriteAppEntries: []
     property var favoriteAppIds: []
     property var appsPickerEntries: []
@@ -155,10 +161,10 @@ Item {
     readonly property int favoriteAppCount: root.favoriteAppIds.length
 
     // Only one panel morph is ever non-zero, so the peek can react to whichever is running.
-    readonly property real panelMorph: Math.max(root.wifiMorph, root.btMorph, root.batteryMorph, root.appsMorph)
+    readonly property real panelMorph: Math.max(root.wifiMorph, root.btMorph, root.batteryMorph, root.settingsMorph, root.appsMorph)
 
     // The peek stays mounted through the morph so it can fade/shrink into the panel.
-    readonly property bool peekVisible: (root.mode === "idle" && root.forceExpanded) || root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "battery" || root.mode === "apps"
+    readonly property bool peekVisible: (root.mode === "idle" && root.forceExpanded) || root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "battery" || root.mode === "settings" || root.mode === "apps"
     readonly property real peekMorphOpacity: 1 - Math.min(1, root.panelMorph / 0.45)
     readonly property real wifiPanelProgress: Math.max(0, Math.min(1, (root.wifiMorph - 0.22) / 0.78))
     readonly property real appsPanelProgress: Math.max(0, Math.min(1, (root.appsMorph - 0.22) / 0.78))
@@ -185,6 +191,12 @@ Item {
     signal batteryCloseRequested
     signal batteryToggleThresholdRequested
     signal powerProfileRequested(string profile)
+    signal glacierSettingsRequested
+    signal settingsCloseRequested
+    signal liquidGlassRequested(bool enabled)
+    signal idleWidthRequested(int width)
+    signal idleHeightRequested(int height)
+    signal settingsResetRequested
     signal appsSettingsRequested
     signal appsCloseRequested
     signal appsPickerToggleRequested
@@ -390,6 +402,7 @@ Item {
                 showBattery: true
                 onHandleStyleRequested: style => root.handleStyleRequested(style)
                 onBatteryRequested: root.batteryRequested()
+                onSettingsRequested: root.glacierSettingsRequested()
             }
 
             RowLayout {
@@ -644,6 +657,31 @@ Item {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.wifiToggleRadioRequested()
+                    }
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 20
+                    Layout.preferredHeight: 20
+                    radius: 10
+                    color: wifiSettingsMouse.containsMouse ? "#1a1a1a" : "#0a0a0a"
+                    border.width: 1
+                    border.color: "#232323"
+
+                    MIcon {
+                        anchors.centerIn: parent
+                        name: "settings"
+                        size: 12
+                        color: "#999999"
+                    }
+
+                    MouseArea {
+                        id: wifiSettingsMouse
+
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.glacierSettingsRequested()
                     }
                 }
 
@@ -959,6 +997,7 @@ Item {
         morph: root.btMorph
         maxPanelHeight: root.btMaxPanelHeight
         onCloseRequested: root.btCloseRequested()
+        onSettingsRequested: root.glacierSettingsRequested()
         onToggleRadioRequested: root.btToggleRadioRequested()
         onRefreshRequested: root.btRefreshRequested()
         onDeviceRequested: device => root.btDeviceRequested(device)
@@ -995,8 +1034,25 @@ Item {
         fontFamily: root.fontFamily
         morph: root.batteryMorph
         onCloseRequested: root.batteryCloseRequested()
+        onSettingsRequested: root.glacierSettingsRequested()
         onToggleThresholdRequested: root.batteryToggleThresholdRequested()
         onPowerProfileRequested: profile => root.powerProfileRequested(profile)
+    }
+
+    SettingsPanel {
+        id: settingsContent
+
+        anchors.fill: parent
+        liquidGlassEnabled: root.liquidGlassEnabled
+        idleWidth: root.idleWidth
+        idleHeight: root.idleHeight
+        fontFamily: root.fontFamily
+        morph: root.settingsMorph
+        onCloseRequested: root.settingsCloseRequested()
+        onLiquidGlassRequested: enabled => root.liquidGlassRequested(enabled)
+        onIdleWidthRequested: width => root.idleWidthRequested(width)
+        onIdleHeightRequested: height => root.idleHeightRequested(height)
+        onResetRequested: root.settingsResetRequested()
     }
 
     Item {
@@ -1072,6 +1128,31 @@ Item {
                             font.family: root.fontFamily
                             font.pixelSize: 11
                             font.weight: Font.DemiBold
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.preferredWidth: 20
+                        Layout.preferredHeight: 20
+                        radius: 10
+                        color: appsSettingsMouse.containsMouse ? "#1a1a1a" : "#0a0a0a"
+                        border.width: 1
+                        border.color: "#232323"
+
+                        MIcon {
+                            anchors.centerIn: parent
+                            name: "settings"
+                            size: 12
+                            color: "#999999"
+                        }
+
+                        MouseArea {
+                            id: appsSettingsMouse
+
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.glacierSettingsRequested()
                         }
                     }
 
@@ -1634,6 +1715,32 @@ Item {
             }
         }
 
+        Rectangle {
+            Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: 20
+            Layout.preferredHeight: 20
+            radius: 10
+            color: notificationSettingsMouse.containsMouse ? "#1a1a1a" : "#0a0a0a"
+            border.width: 1
+            border.color: "#232323"
+
+            MIcon {
+                anchors.centerIn: parent
+                name: "settings"
+                size: 12
+                color: "#999999"
+            }
+
+            MouseArea {
+                id: notificationSettingsMouse
+
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.glacierSettingsRequested()
+            }
+        }
+
         Behavior on opacity {
             NumberAnimation {
                 duration: 210
@@ -1740,6 +1847,7 @@ Item {
                 showBattery: true
                 onHandleStyleRequested: style => root.handleStyleRequested(style)
                 onBatteryRequested: root.batteryRequested()
+                onSettingsRequested: root.glacierSettingsRequested()
             }
 
             RowLayout {

@@ -12,6 +12,37 @@ import Quickshell.Wayland
 Scope {
     id: root
 
+    // Register a narrow compositor rule at runtime so the glass works from the
+    // packaged launcher as well as from an end-4 config. The global guard keeps
+    // QML hot reloads from accumulating duplicate rules on Hyprland 0.55+.
+    Process {
+        id: compositorGlassRuleProc
+
+        running: true
+        command: [
+            "hyprctl",
+            "eval",
+            "if rawget(_G, 'dynamic_glacier_glass_rule') == nil then _G.dynamic_glacier_glass_rule = hl.layer_rule({ name = 'dynamic-glacier-glass', match = { namespace = '^quickshell:dynamic-glacier$' }, blur = true, ignore_alpha = 0.18, xray = false }) end"
+        ]
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode !== 0)
+                legacyCompositorGlassRuleProc.running = true;
+        }
+    }
+
+    // Hyprland <= 0.54 has no Lua `eval`; keep the same package usable there
+    // through the former runtime layer-rule syntax.
+    Process {
+        id: legacyCompositorGlassRuleProc
+
+        running: false
+        command: [
+            "hyprctl",
+            "--batch",
+            "keyword layerrule blur,quickshell:dynamic-glacier ; keyword layerrule ignorealpha 0.18,quickshell:dynamic-glacier ; keyword layerrule xray 0,quickshell:dynamic-glacier"
+        ]
+    }
+
     property string mode: "idle"
     property string appName: "Dynamic Glacier"
     property string title: "Ready"
@@ -39,6 +70,12 @@ Scope {
     property int backlightMaxRaw: 0
     property date currentDateTime: new Date()
     property string handleStyle: "bump"
+    property bool liquidGlassEnabled: false
+    property int peekWidth: 340
+    property int peekHeight: 132
+    property bool exitPreviewActive: false
+    property int exitPreviewWidth: 340
+    property bool visualSettingsLoaded: false
     property var activePlayer: null
     property string lastTrackKey: ""
     property real lastSinkVolume: -1
@@ -50,9 +87,9 @@ Scope {
     property bool trayBatteryDismissed: false
     property bool trayMediaDismissed: false
 
-    readonly property bool interactionOpen: root.mode === "idle" && (root.pointerInside || root.pinnedOpen)
+    readonly property bool interactionOpen: root.mode === "idle" && (root.pointerInside || root.pinnedOpen || root.exitPreviewActive)
     readonly property bool trayVisible: root.handleStyle === "bump" && !root.interactionOpen && root.visualMode === "idle"
-    readonly property bool hoverMediaMode: root.liveLinksEnabled && root.mode === "idle" && root.interactionOpen && !root.mediaHoverSuppressed && root.hasActiveMedia()
+    readonly property bool hoverMediaMode: root.liveLinksEnabled && root.mode === "idle" && root.interactionOpen && !root.exitPreviewActive && !root.mediaHoverSuppressed && root.hasActiveMedia()
     // The volume HUD is a transient morph, so it only takes over the idle shape —
     // a notification, the media card or an open panel all outrank it.
     readonly property bool volumeHudMode: root.volumeIndicatorVisible && root.mode === "idle"
@@ -65,8 +102,6 @@ Scope {
     readonly property int bumpHeight: 24
     readonly property int stripWidth: 98
     readonly property int stripHeight: 4
-    readonly property int peekWidth: 340
-    readonly property int peekHeight: 132
     readonly property int notifyWidth: 438
     readonly property int notifyHeight: 74
     readonly property int mediaWidth: 380
@@ -83,6 +118,8 @@ Scope {
     readonly property int btMaxPanelHeight: 440
     readonly property int batteryWidth: 500
     readonly property int batteryMinHeight: 132
+    readonly property int settingsWidth: 500
+    readonly property int settingsMinHeight: 132
     readonly property int appsWidth: 340
     readonly property int appsMinHeight: 132
     readonly property int appsMaxPanelHeight: 470
@@ -177,6 +214,7 @@ Scope {
     // App favorites dock (morphs the island into mode "apps")
     readonly property int appsFavoriteSlots: 8
     readonly property string favoritesPath: Quickshell.statePath("favorites.json")
+    readonly property string visualSettingsPath: Quickshell.statePath("settings.json")
     readonly property string favoritesDir: root.parentDirectory(root.favoritesPath)
     property var favoriteAppIds: []
     property bool appsPickerOpen: false
@@ -202,11 +240,13 @@ Scope {
             return root.btWidth;
         case "battery":
             return root.batteryWidth;
+        case "settings":
+            return root.settingsWidth;
         case "apps":
             return root.appsWidth;
         default:
             if (root.interactionOpen)
-                return root.peekWidth;
+                return root.exitPreviewActive ? Math.max(root.peekWidth, root.exitPreviewWidth) : root.peekWidth;
             return root.handleStyle === "strip" ? root.stripWidth : root.bumpWidth;
         }
     }
@@ -225,6 +265,8 @@ Scope {
             return root.btMinHeight;
         case "battery":
             return root.batteryMinHeight;
+        case "settings":
+            return root.settingsMinHeight;
         case "apps":
             return root.appsMinHeight;
         default:
@@ -254,7 +296,7 @@ Scope {
     function scheduleInteractionClose() {
         // Detail panels are hover-owned even when the idle island was pinned.
         // Keeping the pinned state only applies to the compact idle peek.
-        if (root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "battery" || root.mode === "apps" || !root.pinnedOpen)
+        if (root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "battery" || root.mode === "settings" || root.mode === "apps" || !root.pinnedOpen)
             hoverLeaveTimer.restart();
     }
 
@@ -298,13 +340,17 @@ Scope {
         return root.pad2(date.getDate()) + "." + root.pad2(date.getMonth() + 1) + "." + date.getFullYear() + ", " + shortDays[day];
     }
 
-    function showIdle() {
+    function showIdle(preserveExitPreview) {
+        const keepExitPreview = preserveExitPreview === true;
+
         if (root.mode === "bluetooth" && root.btAdapter?.discovering)
             root.btAdapter.discovering = false;
 
         collapseTimer.stop();
         root.mode = "idle";
         root.pinnedOpen = false;
+        if (!keepExitPreview)
+            root.exitPreviewActive = false;
         root.title = "Ready";
         root.body = "Waiting for a signal";
         // The picker owns the only focused text field in the island. Leaving it
@@ -325,13 +371,66 @@ Scope {
         }
     }
 
+    function closePanelToWideIdle(panelWidth) {
+        root.exitPreviewWidth = Math.max(root.peekWidth, panelWidth);
+        root.exitPreviewActive = true;
+        root.pointerInside = true;
+        root.showIdle(true);
+    }
+
+    function maybeFinishExitPreview(localX, areaWidth) {
+        if (!root.exitPreviewActive)
+            return;
+
+        const normalWidth = Math.min(root.peekWidth, areaWidth);
+        const normalLeft = (areaWidth - normalWidth) / 2;
+
+        if (localX >= normalLeft && localX <= normalLeft + normalWidth) {
+            root.exitPreviewActive = false;
+            root.pointerInside = true;
+        }
+    }
+
     function setHandleStyle(style) {
-        if (style === "strip" || style === "bump")
+        if (style === "strip" || style === "bump") {
             root.handleStyle = style;
+            root.saveVisualSettings();
+        }
     }
 
     function toggleHandleStyle() {
         root.handleStyle = root.handleStyle === "strip" ? "bump" : "strip";
+        root.saveVisualSettings();
+    }
+
+    function setLiquidGlassEnabled(enabled) {
+        root.liquidGlassEnabled = enabled === true;
+        root.saveVisualSettings();
+    }
+
+    function setIdleWidth(width) {
+        const numericWidth = Number(width);
+
+        if (isFinite(numericWidth)) {
+            root.peekWidth = Math.max(300, Math.min(520, Math.round(numericWidth / 10) * 10));
+            root.saveVisualSettings();
+        }
+    }
+
+    function setIdleHeight(height) {
+        const numericHeight = Number(height);
+
+        if (isFinite(numericHeight)) {
+            root.peekHeight = Math.max(112, Math.min(180, Math.round(numericHeight / 4) * 4));
+            root.saveVisualSettings();
+        }
+    }
+
+    function resetVisualSettings() {
+        root.liquidGlassEnabled = false;
+        root.peekWidth = 340;
+        root.peekHeight = 132;
+        root.saveVisualSettings();
     }
 
     function showNotification(summary, message, app) {
@@ -742,6 +841,7 @@ Scope {
         }
 
         collapseTimer.stop();
+        root.exitPreviewActive = false;
         root.mode = "wifi";
         root.wifiExpandedSsid = "";
         root.wifiPasswordDraft = "";
@@ -919,6 +1019,7 @@ Scope {
         }
 
         collapseTimer.stop();
+        root.exitPreviewActive = false;
         root.mode = "bluetooth";
         root.btStatusText = root.btAdapter ? "" : "No Bluetooth adapter";
 
@@ -1099,10 +1200,22 @@ Scope {
         }
 
         collapseTimer.stop();
+        root.exitPreviewActive = false;
         root.mode = "battery";
         root.refreshBatteryTelemetry();
         root.refreshBatteryThresholdState();
         root.refreshPowerProfileState();
+    }
+
+    function toggleSettingsPanel() {
+        if (root.mode === "settings") {
+            root.showIdle();
+            return;
+        }
+
+        collapseTimer.stop();
+        root.exitPreviewActive = false;
+        root.mode = "settings";
     }
 
     function parentDirectory(path) {
@@ -1211,6 +1324,7 @@ Scope {
         }
 
         collapseTimer.stop();
+        root.exitPreviewActive = false;
         root.mode = "apps";
         root.appsPickerOpen = false;
         root.appsSearchDraft = "";
@@ -1280,6 +1394,34 @@ Scope {
         }
     }
 
+    function applyVisualSettingsJson(text) {
+        try {
+            const parsed = JSON.parse(text);
+
+            root.handleStyle = parsed.handleStyle === "strip" ? "strip" : "bump";
+            root.liquidGlassEnabled = parsed.liquidGlassEnabled === true;
+            root.peekWidth = Math.max(300, Math.min(520, Math.round((Number(parsed.idleWidth) || 340) / 10) * 10));
+            root.peekHeight = Math.max(112, Math.min(180, Math.round((Number(parsed.idleHeight) || 132) / 4) * 4));
+        } catch (error) {
+            // Keep the built-in defaults if the file is empty or hand-edited
+            // into invalid JSON. The next UI change rewrites a valid file.
+        }
+
+        root.visualSettingsLoaded = true;
+    }
+
+    function saveVisualSettings() {
+        if (!root.visualSettingsLoaded)
+            return;
+
+        visualSettingsFile.setText(JSON.stringify({
+            handleStyle: root.handleStyle,
+            liquidGlassEnabled: root.liquidGlassEnabled,
+            idleWidth: root.peekWidth,
+            idleHeight: root.peekHeight
+        }, null, 2) + "\n");
+    }
+
     function saveFavorites() {
         favoritesFile.setText(JSON.stringify(root.favoriteAppIds));
     }
@@ -1297,7 +1439,7 @@ Scope {
         onTriggered: {
             root.pointerInside = false;
 
-            if (root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "battery" || root.mode === "apps")
+            if (root.exitPreviewActive || root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "battery" || root.mode === "settings" || root.mode === "apps")
                 root.showIdle();
         }
     }
@@ -1681,6 +1823,28 @@ Scope {
         onLoaded: root.applyFavoritesJson(favoritesFile.text())
     }
 
+    FileView {
+        id: visualSettingsFile
+
+        path: root.visualSettingsPath
+        preload: true
+        atomicWrites: true
+        printErrors: false
+        onLoaded: root.applyVisualSettingsJson(visualSettingsFile.text())
+        onLoadFailed: {
+            root.visualSettingsLoaded = true;
+            visualSettingsInitialSaveTimer.restart();
+        }
+    }
+
+    Timer {
+        id: visualSettingsInitialSaveTimer
+
+        interval: 180
+        repeat: false
+        onTriggered: root.saveVisualSettings()
+    }
+
     Process {
         id: wifiPollProc
 
@@ -1770,10 +1934,12 @@ Scope {
         // Tall enough for the tallest expanded panel so the morph never clips.
         // The surface is transparent and input is limited to `mask`, so the extra
         // room costs nothing.
-        implicitHeight: Math.max(root.windowHeight, root.wifiMaxPanelHeight + 32, root.btMaxPanelHeight + 32, root.appsMaxPanelHeight + 32)
+        implicitHeight: Math.max(root.windowHeight, root.wifiMaxPanelHeight + 32, root.btMaxPanelHeight + 32, root.settingsMinHeight + 180, root.appsMaxPanelHeight + 32)
         visible: true
 
-        WlrLayershell.namespace: "dynamic-glacier"
+        // end-4 already enables compositor blur for `quickshell:*` surfaces.
+        // Other Hyprland setups can target this stable namespace explicitly.
+        WlrLayershell.namespace: "quickshell:dynamic-glacier"
         WlrLayershell.layer: WlrLayer.Top
         // Layer surfaces get no keyboard by default, so every TextInput in here
         // was inert: forceActiveFocus() moved Qt's internal focus (which is why
@@ -1830,6 +1996,9 @@ Scope {
                 btMaxPanelHeight: root.btMaxPanelHeight
                 mode: root.visualMode
                 handleStyle: root.handleStyle
+                liquidGlassEnabled: root.liquidGlassEnabled
+                idleWidth: root.peekWidth
+                idleHeight: root.peekHeight
                 forceExpanded: root.interactionOpen
                 appName: root.appName
                 title: root.title
@@ -1915,22 +2084,28 @@ Scope {
                     root.showIdle();
                 }
                 onWifiSettingsRequested: root.toggleWifiPanel()
-                onWifiCloseRequested: root.showIdle()
+                onWifiCloseRequested: root.closePanelToWideIdle(root.wifiWidth)
                 onWifiToggleRadioRequested: root.toggleWifiRadio()
                 onWifiRowRequested: ssid => root.requestWifiExpand(ssid)
                 onWifiConnectRequested: (ssid, secured) => root.connectToWifiNetwork(ssid, secured)
                 onWifiDisconnectRequested: ssid => root.disconnectFromWifiNetwork(ssid)
                 onWifiPasswordChanged: text => root.wifiPasswordDraft = text
-                onBtCloseRequested: root.showIdle()
+                onBtCloseRequested: root.closePanelToWideIdle(root.btWidth)
                 onBtToggleRadioRequested: root.toggleBluetoothRadio()
                 onBtRefreshRequested: root.refreshBluetoothDevices()
                 onBtDeviceRequested: device => root.toggleBluetoothDevice(device)
                 onBatteryRequested: root.toggleBatteryPanel()
-                onBatteryCloseRequested: root.showIdle()
+                onBatteryCloseRequested: root.closePanelToWideIdle(root.batteryWidth)
                 onBatteryToggleThresholdRequested: root.toggleBatteryThreshold()
                 onPowerProfileRequested: profile => root.setPowerProfile(profile)
                 onAppsSettingsRequested: root.toggleAppsPanel()
-                onAppsCloseRequested: root.showIdle()
+                onGlacierSettingsRequested: root.toggleSettingsPanel()
+                onSettingsCloseRequested: root.closePanelToWideIdle(root.settingsWidth)
+                onLiquidGlassRequested: enabled => root.setLiquidGlassEnabled(enabled)
+                onIdleWidthRequested: width => root.setIdleWidth(width)
+                onIdleHeightRequested: height => root.setIdleHeight(height)
+                onSettingsResetRequested: root.resetVisualSettings()
+                onAppsCloseRequested: root.closePanelToWideIdle(root.appsWidth)
                 onAppsPickerToggleRequested: root.toggleAppsPicker()
                 onAppsSearchChanged: text => root.appsSearchDraft = text
                 onAppsSearchAccepted: root.launchTopSearchMatch()
@@ -2092,9 +2267,10 @@ Scope {
                 width: island.width
                 height: root.mode === "idle" && !root.interactionOpen ? Math.max(root.reservedZone, island.height) : island.height
                 hoverEnabled: true
-                acceptedButtons: root.visualMode === "media" || root.visualMode === "wifi" || root.visualMode === "bluetooth" || root.visualMode === "battery" || root.visualMode === "apps" || root.interactionOpen ? Qt.NoButton : Qt.LeftButton
+                acceptedButtons: root.visualMode === "media" || root.visualMode === "wifi" || root.visualMode === "bluetooth" || root.visualMode === "battery" || root.visualMode === "settings" || root.visualMode === "apps" || root.interactionOpen ? Qt.NoButton : Qt.LeftButton
                 cursorShape: Qt.PointingHandCursor
                 onEntered: root.keepInteractionOpen(true)
+                onPositionChanged: mouse => root.maybeFinishExitPreview(mouse.x, width)
                 onExited: {
                     root.mediaHoverSuppressed = false;
                     root.scheduleInteractionClose();
@@ -2170,6 +2346,19 @@ Scope {
 
         function battery(): void {
             root.toggleBatteryPanel();
+        }
+
+        function settings(): void {
+            root.toggleSettingsPanel();
+        }
+
+        function liquidGlass(enabled: string): void {
+            root.setLiquidGlassEnabled(root.boolFromIpc(enabled));
+        }
+
+        function idleSize(width: int, height: int): void {
+            root.setIdleWidth(width);
+            root.setIdleHeight(height);
         }
 
         function batteryLimit(enabled: string): void {
