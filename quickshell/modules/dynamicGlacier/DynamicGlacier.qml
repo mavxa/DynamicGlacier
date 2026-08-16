@@ -1,6 +1,7 @@
 import QtQml.Models
 import QtQuick
 import Quickshell
+import Quickshell.Bluetooth
 import Quickshell.Hyprland
 import Quickshell.Io
 import Quickshell.Services.Mpris
@@ -10,6 +11,37 @@ import Quickshell.Wayland
 
 Scope {
     id: root
+
+    // Register a narrow compositor rule at runtime so the glass works from the
+    // packaged launcher as well as from an end-4 config. The global guard keeps
+    // QML hot reloads from accumulating duplicate rules on Hyprland 0.55+.
+    Process {
+        id: compositorGlassRuleProc
+
+        running: true
+        command: [
+            "hyprctl",
+            "eval",
+            "if rawget(_G, 'dynamic_glacier_glass_rule') == nil then _G.dynamic_glacier_glass_rule = hl.layer_rule({ name = 'dynamic-glacier-glass', match = { namespace = '^quickshell:dynamic-glacier$' }, blur = true, ignore_alpha = 0.18, xray = false }) end"
+        ]
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode !== 0)
+                legacyCompositorGlassRuleProc.running = true;
+        }
+    }
+
+    // Hyprland <= 0.54 has no Lua `eval`; keep the same package usable there
+    // through the former runtime layer-rule syntax.
+    Process {
+        id: legacyCompositorGlassRuleProc
+
+        running: false
+        command: [
+            "hyprctl",
+            "--batch",
+            "keyword layerrule blur,quickshell:dynamic-glacier ; keyword layerrule ignorealpha 0.18,quickshell:dynamic-glacier ; keyword layerrule xray 0,quickshell:dynamic-glacier"
+        ]
+    }
 
     property string mode: "idle"
     property string appName: "Dynamic Glacier"
@@ -38,6 +70,12 @@ Scope {
     property int backlightMaxRaw: 0
     property date currentDateTime: new Date()
     property string handleStyle: "bump"
+    property bool liquidGlassEnabled: false
+    property int peekWidth: 340
+    property int peekHeight: 132
+    property bool exitPreviewActive: false
+    property int exitPreviewWidth: 340
+    property bool visualSettingsLoaded: false
     property var activePlayer: null
     property string lastTrackKey: ""
     property real lastSinkVolume: -1
@@ -49,9 +87,9 @@ Scope {
     property bool trayBatteryDismissed: false
     property bool trayMediaDismissed: false
 
-    readonly property bool interactionOpen: root.mode === "idle" && (root.pointerInside || root.pinnedOpen)
+    readonly property bool interactionOpen: root.mode === "idle" && (root.pointerInside || root.pinnedOpen || root.exitPreviewActive)
     readonly property bool trayVisible: root.handleStyle === "bump" && !root.interactionOpen && root.visualMode === "idle"
-    readonly property bool hoverMediaMode: root.liveLinksEnabled && root.mode === "idle" && root.interactionOpen && !root.mediaHoverSuppressed && root.hasActiveMedia()
+    readonly property bool hoverMediaMode: root.liveLinksEnabled && root.mode === "idle" && root.interactionOpen && !root.exitPreviewActive && !root.mediaHoverSuppressed && root.hasActiveMedia()
     // The volume HUD is a transient morph, so it only takes over the idle shape —
     // a notification, the media card or an open panel all outrank it.
     readonly property bool volumeHudMode: root.volumeIndicatorVisible && root.mode === "idle"
@@ -64,19 +102,24 @@ Scope {
     readonly property int bumpHeight: 24
     readonly property int stripWidth: 98
     readonly property int stripHeight: 4
-    readonly property int peekWidth: 340
-    readonly property int peekHeight: 132
     readonly property int notifyWidth: 438
     readonly property int notifyHeight: 74
     readonly property int mediaWidth: 380
     readonly property int mediaHeight: 132
     readonly property int volumeWidth: 244
     readonly property int volumeHeight: 48
-    readonly property int wifiWidth: 340
+    readonly property int wifiWidth: 500
     // Floor for the Wi-Fi panel; the island grows past it to fit the network list,
     // up to wifiMaxPanelHeight.
     readonly property int wifiMinHeight: 132
-    readonly property int wifiMaxPanelHeight: 420
+    readonly property int wifiMaxPanelHeight: 440
+    readonly property int btWidth: 500
+    readonly property int btMinHeight: 132
+    readonly property int btMaxPanelHeight: 440
+    readonly property int batteryWidth: 500
+    readonly property int batteryMinHeight: 132
+    readonly property int settingsWidth: 500
+    readonly property int settingsMinHeight: 132
     readonly property int appsWidth: 340
     readonly property int appsMinHeight: 132
     readonly property int appsMaxPanelHeight: 470
@@ -116,19 +159,62 @@ Scope {
     property string wifiExpandedSsid: ""
     property string wifiPasswordDraft: ""
     property string pendingWifiPassword: ""
+    property string pendingWifiSsid: ""
+    property bool pendingWifiSecured: false
+    property bool pendingWifiUsedPassword: false
     property string wifiStatusText: ""
     property bool wifiConnecting: false
     property double lastWifiScanAt: 0
 
-    // Bluetooth
-    property string btDeviceName: ""
-    property int btBattery: -1
-    readonly property bool btEnabled: true
-    readonly property bool btConnected: root.btDeviceName !== ""
+    // Bluetooth manager. Quickshell talks to BlueZ directly, so the panel and
+    // compact status stay reactive without polling bluetoothctl through a shell.
+    readonly property var btAdapter: Bluetooth.defaultAdapter
+    readonly property var btDevices: root.sortedBluetoothDevices()
+    readonly property var btConnectedDevice: root.btDevices.find(device => device.connected) ?? null
+    readonly property bool btEnabled: root.btAdapter?.enabled ?? false
+    readonly property bool btConnected: root.btConnectedDevice !== null
+    readonly property string btDeviceName: root.btConnectedDevice?.name || root.btConnectedDevice?.deviceName || ""
+    readonly property int btBattery: root.btConnectedDevice?.batteryAvailable ? Math.round(root.btConnectedDevice.battery * 100) : -1
+    readonly property bool btDiscovering: root.btAdapter?.discovering ?? false
+    property string btStatusText: ""
+
+    // Detailed battery telemetry combines reactive UPower state with values that
+    // are only exposed by the kernel power_supply interface on this machine.
+    readonly property var batteryDevice: UPower.devices.values.find(device => device.isLaptopBattery && (device.nativePath ?? "") !== "") ?? UPower.displayDevice
+    readonly property string batterySysfsPath: (root.batteryDevice?.nativePath ?? "") !== "" ? "/sys/class/power_supply/" + root.batteryDevice.nativePath : ""
+    readonly property int batteryCycles: root.fileNumber(batteryCycleFile, -1)
+    readonly property real batteryFullCharge: root.fileNumber(batteryFullFile, -1)
+    readonly property real batteryDesignCharge: root.fileNumber(batteryDesignFile, -1)
+    readonly property real batteryDesignVoltage: root.fileNumber(batteryDesignVoltageFile, -1)
+    readonly property real batteryVoltage: root.fileNumber(batteryVoltageFile, -1) / 1000000
+    readonly property real batteryCurrent: root.fileNumber(batteryCurrentFile, -1) / 1000000
+    readonly property real batteryFullCapacityWh: root.batteryFullCharge >= 0 && root.batteryDesignVoltage > 0 ? root.batteryFullCharge * root.batteryDesignVoltage / 1000000000000 : -1
+    readonly property real batteryDesignCapacityWh: root.batteryDesignCharge >= 0 && root.batteryDesignVoltage > 0 ? root.batteryDesignCharge * root.batteryDesignVoltage / 1000000000000 : -1
+    readonly property real batteryHealth: root.batteryFullCharge >= 0 && root.batteryDesignCharge > 0 ? Math.min(100, root.batteryFullCharge / root.batteryDesignCharge * 100) : -1
+    readonly property real batteryPower: root.batteryVoltage >= 0 && root.batteryCurrent >= 0 ? Math.abs(root.batteryVoltage * root.batteryCurrent) : -1
+    readonly property string batteryStatus: root.fileText(batteryStatusFile, "")
+    readonly property string batteryModel: root.fileText(batteryModelFile, "")
+    readonly property string batteryDbusPath: (root.batteryDevice?.nativePath ?? "") !== "" ? "/org/freedesktop/UPower/devices/battery_" + root.batteryDevice.nativePath.replace(/[^A-Za-z0-9_]/g, "_") : ""
+    property bool batteryThresholdSupported: false
+    property bool batteryThresholdEnabled: false
+    property bool batteryThresholdBusy: false
+    property bool pendingBatteryThresholdEnabled: false
+    property int batteryThresholdStart: -1
+    property int batteryThresholdEnd: -1
+    property string batteryThresholdStatusText: ""
+    property bool powerProfilesAvailable: false
+    property var availablePowerProfiles: []
+    property string activePowerProfile: ""
+    property bool powerProfileBusy: false
+    property string pendingPowerProfile: ""
+    property string powerProfileStatusText: ""
+    property string performanceDegraded: ""
+    property string performanceInhibited: ""
 
     // App favorites dock (morphs the island into mode "apps")
     readonly property int appsFavoriteSlots: 8
     readonly property string favoritesPath: Quickshell.statePath("favorites.json")
+    readonly property string visualSettingsPath: Quickshell.statePath("settings.json")
     readonly property string favoritesDir: root.parentDirectory(root.favoritesPath)
     property var favoriteAppIds: []
     property bool appsPickerOpen: false
@@ -150,11 +236,17 @@ Scope {
             return root.volumeWidth;
         case "wifi":
             return root.wifiWidth;
+        case "bluetooth":
+            return root.btWidth;
+        case "battery":
+            return root.batteryWidth;
+        case "settings":
+            return root.settingsWidth;
         case "apps":
             return root.appsWidth;
         default:
             if (root.interactionOpen)
-                return root.peekWidth;
+                return root.exitPreviewActive ? Math.max(root.peekWidth, root.exitPreviewWidth) : root.peekWidth;
             return root.handleStyle === "strip" ? root.stripWidth : root.bumpWidth;
         }
     }
@@ -169,6 +261,12 @@ Scope {
             return root.volumeHeight;
         case "wifi":
             return root.wifiMinHeight;
+        case "bluetooth":
+            return root.btMinHeight;
+        case "battery":
+            return root.batteryMinHeight;
+        case "settings":
+            return root.settingsMinHeight;
         case "apps":
             return root.appsMinHeight;
         default:
@@ -196,12 +294,32 @@ Scope {
     }
 
     function scheduleInteractionClose() {
-        if (!root.pinnedOpen)
+        // Detail panels are hover-owned even when the idle island was pinned.
+        // Keeping the pinned state only applies to the compact idle peek.
+        if (root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "battery" || root.mode === "settings" || root.mode === "apps" || !root.pinnedOpen)
             hoverLeaveTimer.restart();
     }
 
     function boolFromIpc(value) {
         return value === true || value === "true" || value === "1" || value === "on" || value === "yes";
+    }
+
+    function fileText(fileView, fallback) {
+        if (!fileView?.loaded)
+            return fallback;
+
+        const value = fileView.text().trim();
+        return value !== "" ? value : fallback;
+    }
+
+    function fileNumber(fileView, fallback) {
+        const text = root.fileText(fileView, "");
+
+        if (text === "")
+            return fallback;
+
+        const value = Number(text);
+        return isFinite(value) ? value : fallback;
     }
 
     function pad2(value) {
@@ -222,10 +340,17 @@ Scope {
         return root.pad2(date.getDate()) + "." + root.pad2(date.getMonth() + 1) + "." + date.getFullYear() + ", " + shortDays[day];
     }
 
-    function showIdle() {
+    function showIdle(preserveExitPreview) {
+        const keepExitPreview = preserveExitPreview === true;
+
+        if (root.mode === "bluetooth" && root.btAdapter?.discovering)
+            root.btAdapter.discovering = false;
+
         collapseTimer.stop();
         root.mode = "idle";
         root.pinnedOpen = false;
+        if (!keepExitPreview)
+            root.exitPreviewActive = false;
         root.title = "Ready";
         root.body = "Waiting for a signal";
         // The picker owns the only focused text field in the island. Leaving it
@@ -234,6 +359,10 @@ Scope {
         root.appsPickerOpen = false;
         root.appsSearchDraft = "";
         root.appsStatusText = "";
+        root.wifiExpandedSsid = "";
+        root.wifiPasswordDraft = "";
+        root.wifiStatusText = "";
+        root.btStatusText = "";
 
         if (root.liveLinksEnabled) {
             root.chooseActivePlayer(null);
@@ -242,13 +371,66 @@ Scope {
         }
     }
 
+    function closePanelToWideIdle(panelWidth) {
+        root.exitPreviewWidth = Math.max(root.peekWidth, panelWidth);
+        root.exitPreviewActive = true;
+        root.pointerInside = true;
+        root.showIdle(true);
+    }
+
+    function maybeFinishExitPreview(localX, areaWidth) {
+        if (!root.exitPreviewActive)
+            return;
+
+        const normalWidth = Math.min(root.peekWidth, areaWidth);
+        const normalLeft = (areaWidth - normalWidth) / 2;
+
+        if (localX >= normalLeft && localX <= normalLeft + normalWidth) {
+            root.exitPreviewActive = false;
+            root.pointerInside = true;
+        }
+    }
+
     function setHandleStyle(style) {
-        if (style === "strip" || style === "bump")
+        if (style === "strip" || style === "bump") {
             root.handleStyle = style;
+            root.saveVisualSettings();
+        }
     }
 
     function toggleHandleStyle() {
         root.handleStyle = root.handleStyle === "strip" ? "bump" : "strip";
+        root.saveVisualSettings();
+    }
+
+    function setLiquidGlassEnabled(enabled) {
+        root.liquidGlassEnabled = enabled === true;
+        root.saveVisualSettings();
+    }
+
+    function setIdleWidth(width) {
+        const numericWidth = Number(width);
+
+        if (isFinite(numericWidth)) {
+            root.peekWidth = Math.max(300, Math.min(520, Math.round(numericWidth / 10) * 10));
+            root.saveVisualSettings();
+        }
+    }
+
+    function setIdleHeight(height) {
+        const numericHeight = Number(height);
+
+        if (isFinite(numericHeight)) {
+            root.peekHeight = Math.max(112, Math.min(180, Math.round(numericHeight / 4) * 4));
+            root.saveVisualSettings();
+        }
+    }
+
+    function resetVisualSettings() {
+        root.liquidGlassEnabled = false;
+        root.peekWidth = 340;
+        root.peekHeight = 132;
+        root.saveVisualSettings();
     }
 
     function showNotification(summary, message, app) {
@@ -659,6 +841,7 @@ Scope {
         }
 
         collapseTimer.stop();
+        root.exitPreviewActive = false;
         root.mode = "wifi";
         root.wifiExpandedSsid = "";
         root.wifiPasswordDraft = "";
@@ -762,17 +945,18 @@ Scope {
     }
 
     function connectToWifiNetwork(ssid, secured) {
-        if (secured && root.wifiPasswordDraft === "") {
-            root.wifiStatusText = "Password required";
+        if (root.wifiConnecting)
             return;
-        }
 
         root.wifiConnecting = true;
         root.wifiStatusText = "";
+        root.pendingWifiSsid = ssid;
+        root.pendingWifiSecured = secured;
+        root.pendingWifiUsedPassword = root.wifiPasswordDraft !== "";
 
         const command = ["nmcli"];
 
-        if (secured) {
+        if (root.pendingWifiUsedPassword) {
             root.pendingWifiPassword = root.wifiPasswordDraft;
             command.push("--ask");
         }
@@ -809,6 +993,229 @@ Scope {
 
         root.wifiSsid = "";
         root.wifiSignal = 0;
+    }
+
+    function bluetoothDeviceName(device) {
+        return device?.name || device?.deviceName || device?.address || "Unknown device";
+    }
+
+    function sortedBluetoothDevices() {
+        const devices = root.btAdapter?.devices.values ?? [];
+
+        return devices.slice().sort((a, b) => {
+            if (a.connected !== b.connected)
+                return a.connected ? -1 : 1;
+            if (a.paired !== b.paired)
+                return a.paired ? -1 : 1;
+
+            return root.bluetoothDeviceName(a).localeCompare(root.bluetoothDeviceName(b));
+        });
+    }
+
+    function toggleBluetoothPanel() {
+        if (root.mode === "bluetooth") {
+            root.showIdle();
+            return;
+        }
+
+        collapseTimer.stop();
+        root.exitPreviewActive = false;
+        root.mode = "bluetooth";
+        root.btStatusText = root.btAdapter ? "" : "No Bluetooth adapter";
+
+        if (root.btEnabled)
+            root.btAdapter.discovering = true;
+    }
+
+    function toggleBluetoothRadio() {
+        if (!root.btAdapter) {
+            root.btStatusText = "No Bluetooth adapter";
+            return;
+        }
+
+        const nextState = !root.btAdapter.enabled;
+        root.btStatusText = "";
+        root.btAdapter.enabled = nextState;
+        root.btAdapter.discovering = nextState;
+    }
+
+    function refreshBluetoothDevices() {
+        if (!root.btAdapter || !root.btAdapter.enabled)
+            return;
+
+        root.btStatusText = "";
+        root.btAdapter.discovering = true;
+    }
+
+    function toggleBluetoothDevice(device) {
+        if (!device)
+            return;
+
+        root.btStatusText = "";
+
+        if (device.connected)
+            device.disconnect();
+        else
+            device.connect();
+    }
+
+    function refreshBatteryTelemetry() {
+        if (root.batterySysfsPath === "")
+            return;
+
+        batteryCycleFile.reload();
+        batteryFullFile.reload();
+        batteryDesignFile.reload();
+        batteryDesignVoltageFile.reload();
+        batteryVoltageFile.reload();
+        batteryCurrentFile.reload();
+        batteryStatusFile.reload();
+        batteryModelFile.reload();
+        batteryThresholdFile.reload();
+    }
+
+    function parseBusctlValue(line) {
+        const separator = line.indexOf(" ");
+        return separator >= 0 ? line.slice(separator + 1).trim() : "";
+    }
+
+    function parseBatteryThresholdState(text) {
+        const lines = text.trim().split("\n").filter(line => line.trim() !== "");
+
+        if (lines.length < 4)
+            return;
+
+        const start = Number(root.parseBusctlValue(lines[0]));
+        const end = Number(root.parseBusctlValue(lines[1]));
+
+        root.batteryThresholdStart = isFinite(start) ? start : -1;
+        root.batteryThresholdEnd = isFinite(end) ? end : -1;
+        root.batteryThresholdEnabled = root.parseBusctlValue(lines[2]) === "true";
+        root.batteryThresholdSupported = root.parseBusctlValue(lines[3]) === "true";
+    }
+
+    function refreshBatteryThresholdState() {
+        if (root.batteryDbusPath === "" || batteryThresholdStateProc.running)
+            return;
+
+        batteryThresholdStateProc.exec([
+            "busctl", "get-property",
+            "org.freedesktop.UPower",
+            root.batteryDbusPath,
+            "org.freedesktop.UPower.Device",
+            "ChargeStartThreshold",
+            "ChargeEndThreshold",
+            "ChargeThresholdEnabled",
+            "ChargeThresholdSupported"
+        ]);
+    }
+
+    function setBatteryThreshold(enabled) {
+        if (!root.batteryThresholdSupported || root.batteryThresholdBusy || root.batteryDbusPath === "")
+            return;
+
+        root.pendingBatteryThresholdEnabled = enabled;
+        root.batteryThresholdBusy = true;
+        root.batteryThresholdStatusText = "";
+        batteryThresholdToggleProc.exec([
+            "busctl", "call",
+            "org.freedesktop.UPower",
+            root.batteryDbusPath,
+            "org.freedesktop.UPower.Device",
+            "EnableChargeThreshold",
+            "b",
+            root.pendingBatteryThresholdEnabled ? "true" : "false"
+        ]);
+    }
+
+    function toggleBatteryThreshold() {
+        root.setBatteryThreshold(!root.batteryThresholdEnabled);
+    }
+
+    function parseBusctlString(line) {
+        const value = root.parseBusctlValue(line);
+
+        if (value.length >= 2 && value.charAt(0) === "\"" && value.charAt(value.length - 1) === "\"")
+            return value.slice(1, -1);
+
+        return value;
+    }
+
+    function parsePowerProfileState(text) {
+        const lines = text.trim().split("\n").filter(line => line.trim() !== "");
+
+        if (lines.length < 4)
+            return;
+
+        const profilesLine = lines[1];
+        const knownProfiles = ["power-saver", "balanced", "performance"];
+        const profiles = knownProfiles.filter(profile => profilesLine.indexOf("\"" + profile + "\"") !== -1);
+        const active = root.parseBusctlString(lines[0]);
+
+        root.availablePowerProfiles = profiles;
+        root.activePowerProfile = active;
+        root.performanceDegraded = root.parseBusctlString(lines[2]);
+        root.performanceInhibited = root.parseBusctlString(lines[3]);
+        root.powerProfilesAvailable = profiles.length > 0 && profiles.indexOf(active) !== -1;
+    }
+
+    function refreshPowerProfileState() {
+        if (powerProfileStateProc.running)
+            return;
+
+        powerProfileStateProc.exec([
+            "busctl", "get-property",
+            "org.freedesktop.UPower.PowerProfiles",
+            "/org/freedesktop/UPower/PowerProfiles",
+            "org.freedesktop.UPower.PowerProfiles",
+            "ActiveProfile",
+            "Profiles",
+            "PerformanceDegraded",
+            "PerformanceInhibited"
+        ]);
+    }
+
+    function setPowerProfile(profile) {
+        if (!root.powerProfilesAvailable || root.powerProfileBusy || root.availablePowerProfiles.indexOf(profile) === -1 || profile === root.activePowerProfile)
+            return;
+
+        root.pendingPowerProfile = profile;
+        root.powerProfileBusy = true;
+        root.powerProfileStatusText = "";
+        powerProfileSetProc.exec([
+            "busctl", "set-property",
+            "org.freedesktop.UPower.PowerProfiles",
+            "/org/freedesktop/UPower/PowerProfiles",
+            "org.freedesktop.UPower.PowerProfiles",
+            "ActiveProfile",
+            "s",
+            profile
+        ]);
+    }
+
+    function toggleBatteryPanel() {
+        if (root.mode === "battery") {
+            root.showIdle();
+            return;
+        }
+
+        collapseTimer.stop();
+        root.exitPreviewActive = false;
+        root.mode = "battery";
+        root.refreshBatteryTelemetry();
+        root.refreshBatteryThresholdState();
+        root.refreshPowerProfileState();
+    }
+
+    function toggleSettingsPanel() {
+        if (root.mode === "settings") {
+            root.showIdle();
+            return;
+        }
+
+        collapseTimer.stop();
+        root.exitPreviewActive = false;
+        root.mode = "settings";
     }
 
     function parentDirectory(path) {
@@ -917,6 +1324,7 @@ Scope {
         }
 
         collapseTimer.stop();
+        root.exitPreviewActive = false;
         root.mode = "apps";
         root.appsPickerOpen = false;
         root.appsSearchDraft = "";
@@ -986,6 +1394,34 @@ Scope {
         }
     }
 
+    function applyVisualSettingsJson(text) {
+        try {
+            const parsed = JSON.parse(text);
+
+            root.handleStyle = parsed.handleStyle === "strip" ? "strip" : "bump";
+            root.liquidGlassEnabled = parsed.liquidGlassEnabled === true;
+            root.peekWidth = Math.max(300, Math.min(520, Math.round((Number(parsed.idleWidth) || 340) / 10) * 10));
+            root.peekHeight = Math.max(112, Math.min(180, Math.round((Number(parsed.idleHeight) || 132) / 4) * 4));
+        } catch (error) {
+            // Keep the built-in defaults if the file is empty or hand-edited
+            // into invalid JSON. The next UI change rewrites a valid file.
+        }
+
+        root.visualSettingsLoaded = true;
+    }
+
+    function saveVisualSettings() {
+        if (!root.visualSettingsLoaded)
+            return;
+
+        visualSettingsFile.setText(JSON.stringify({
+            handleStyle: root.handleStyle,
+            liquidGlassEnabled: root.liquidGlassEnabled,
+            idleWidth: root.peekWidth,
+            idleHeight: root.peekHeight
+        }, null, 2) + "\n");
+    }
+
     function saveFavorites() {
         favoritesFile.setText(JSON.stringify(root.favoriteAppIds));
     }
@@ -1000,7 +1436,12 @@ Scope {
         id: hoverLeaveTimer
         interval: 140
         repeat: false
-        onTriggered: root.pointerInside = false
+        onTriggered: {
+            root.pointerInside = false;
+
+            if (root.exitPreviewActive || root.mode === "wifi" || root.mode === "bluetooth" || root.mode === "battery" || root.mode === "settings" || root.mode === "apps")
+                root.showIdle();
+        }
     }
 
     Timer {
@@ -1105,16 +1546,168 @@ Scope {
         onLoaded: root.updateRawBrightness(Number(backlightFile.text().trim()))
     }
 
+    FileView {
+        id: batteryCycleFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/cycle_count" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryFullFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/charge_full" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryDesignFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/charge_full_design" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryDesignVoltageFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/voltage_min_design" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryVoltageFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/voltage_now" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryCurrentFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/current_now" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryStatusFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/status" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryModelFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/model_name" : ""
+        preload: true
+        printErrors: false
+    }
+
+    FileView {
+        id: batteryThresholdFile
+        path: root.batterySysfsPath !== "" ? root.batterySysfsPath + "/charge_control_end_threshold" : ""
+        preload: true
+        printErrors: false
+        onLoaded: {
+            if (root.batteryThresholdEnd < 0)
+                root.batteryThresholdEnd = root.fileNumber(batteryThresholdFile, -1);
+        }
+    }
+
+    Process {
+        id: batteryThresholdStateProc
+
+        stdout: StdioCollector {
+            onStreamFinished: root.parseBatteryThresholdState(text)
+        }
+    }
+
+    Process {
+        id: batteryThresholdToggleProc
+
+        onExited: (exitCode, exitStatus) => {
+            root.batteryThresholdBusy = false;
+
+            if (exitCode === 0) {
+                root.batteryThresholdStatusText = root.pendingBatteryThresholdEnabled ? "Charge limit enabled" : "Charge limit disabled";
+                root.batteryThresholdEnabled = root.pendingBatteryThresholdEnabled;
+            } else {
+                root.batteryThresholdStatusText = "Could not change charge limit";
+            }
+
+            root.refreshBatteryTelemetry();
+            root.refreshBatteryThresholdState();
+            batteryThresholdStatusTimer.restart();
+        }
+    }
+
+    Timer {
+        id: batteryThresholdStatusTimer
+
+        interval: 2600
+        repeat: false
+        onTriggered: root.batteryThresholdStatusText = ""
+    }
+
+    Process {
+        id: powerProfileStateProc
+
+        stdout: StdioCollector {
+            onStreamFinished: root.parsePowerProfileState(text)
+        }
+
+        onExited: (exitCode, exitStatus) => {
+            if (exitCode !== 0) {
+                root.powerProfilesAvailable = false;
+                root.availablePowerProfiles = [];
+                root.activePowerProfile = "";
+                root.performanceDegraded = "";
+                root.performanceInhibited = "";
+            }
+        }
+    }
+
+    Process {
+        id: powerProfileSetProc
+
+        onExited: (exitCode, exitStatus) => {
+            const requestedProfile = root.pendingPowerProfile;
+
+            root.powerProfileBusy = false;
+            root.pendingPowerProfile = "";
+
+            if (exitCode === 0) {
+                root.activePowerProfile = requestedProfile;
+                root.powerProfileStatusText = "Power mode changed";
+            } else {
+                root.powerProfileStatusText = "Could not change power mode";
+            }
+
+            root.refreshPowerProfileState();
+            powerProfileStatusTimer.restart();
+        }
+    }
+
+    Timer {
+        id: powerProfileStatusTimer
+
+        interval: 2600
+        repeat: false
+        onTriggered: root.powerProfileStatusText = ""
+    }
+
+    Timer {
+        interval: 5000
+        repeat: true
+        running: root.mode === "battery" && root.powerProfilesAvailable
+        onTriggered: root.refreshPowerProfileState()
+    }
+
     Process {
         id: privacyPollProc
 
         stdout: StdioCollector {
             onStreamFinished: root.updatePolledPrivacy(text)
         }
-    }
-
-    Process {
-        id: btSettingsProc
     }
 
     Timer {
@@ -1158,13 +1751,27 @@ Scope {
             }
         }
         onExited: (exitCode, exitStatus) => {
+            const attemptedSsid = root.pendingWifiSsid;
+            const secured = root.pendingWifiSecured;
+            const usedPassword = root.pendingWifiUsedPassword;
+
             root.wifiConnecting = false;
             root.pendingWifiPassword = "";
+            root.pendingWifiSsid = "";
+            root.pendingWifiSecured = false;
+            root.pendingWifiUsedPassword = false;
 
             if (exitCode === 0) {
                 root.wifiExpandedSsid = "";
                 root.wifiPasswordDraft = "";
                 root.wifiStatusText = "";
+            } else if (secured && !usedPassword) {
+                // `nmcli device wifi connect` reuses a matching saved profile.
+                // Only fall back to asking for a secret when that direct attempt
+                // could not activate the secured network.
+                root.wifiExpandedSsid = attemptedSsid;
+                root.wifiPasswordDraft = "";
+                root.wifiStatusText = "Password required";
             } else {
                 root.wifiStatusText = "Connection failed";
             }
@@ -1216,23 +1823,33 @@ Scope {
         onLoaded: root.applyFavoritesJson(favoritesFile.text())
     }
 
+    FileView {
+        id: visualSettingsFile
+
+        path: root.visualSettingsPath
+        preload: true
+        atomicWrites: true
+        printErrors: false
+        onLoaded: root.applyVisualSettingsJson(visualSettingsFile.text())
+        onLoadFailed: {
+            root.visualSettingsLoaded = true;
+            visualSettingsInitialSaveTimer.restart();
+        }
+    }
+
+    Timer {
+        id: visualSettingsInitialSaveTimer
+
+        interval: 180
+        repeat: false
+        onTriggered: root.saveVisualSettings()
+    }
+
     Process {
         id: wifiPollProc
 
         stdout: StdioCollector {
             onStreamFinished: root.parseActiveWifi(text)
-        }
-    }
-
-    Process {
-        id: btPollProc
-
-        stdout: StdioCollector {
-            onStreamFinished: {
-                const parts = text.trim().split("\t");
-                root.btDeviceName = parts[0] || "";
-                root.btBattery = parts.length > 1 ? parseInt(parts[1]) || -1 : -1;
-            }
         }
     }
 
@@ -1244,8 +1861,6 @@ Scope {
         onTriggered: {
             if (!wifiPollProc.running)
                 wifiPollProc.exec(["nmcli", "-t", "-f", "active,ssid,signal", "dev", "wifi"]);
-            if (!btPollProc.running)
-                btPollProc.exec(["sh", "-c", "dev=$(bluetoothctl devices Connected 2>/dev/null | head -1 | cut -d' ' -f3-); [ -z \"$dev\" ] && printf '\\t\\n' && exit 0; bat=$(bluetoothctl info 2>/dev/null | sed -n 's/.*Battery Percentage: 0x[0-9a-f]* (\\([0-9]*\\)).*/\\1/p'); printf '%s\\t%s\\n' \"$dev\" \"$bat\""]);
         }
     }
 
@@ -1319,10 +1934,12 @@ Scope {
         // Tall enough for the tallest expanded panel so the morph never clips.
         // The surface is transparent and input is limited to `mask`, so the extra
         // room costs nothing.
-        implicitHeight: Math.max(root.windowHeight, root.wifiMaxPanelHeight + 32, root.appsMaxPanelHeight + 32)
+        implicitHeight: Math.max(root.windowHeight, root.wifiMaxPanelHeight + 32, root.btMaxPanelHeight + 32, root.settingsMinHeight + 180, root.appsMaxPanelHeight + 32)
         visible: true
 
-        WlrLayershell.namespace: "dynamic-glacier"
+        // end-4 already enables compositor blur for `quickshell:*` surfaces.
+        // Other Hyprland setups can target this stable namespace explicitly.
+        WlrLayershell.namespace: "quickshell:dynamic-glacier"
         WlrLayershell.layer: WlrLayer.Top
         // Layer surfaces get no keyboard by default, so every TextInput in here
         // was inert: forceActiveFocus() moved Qt's internal focus (which is why
@@ -1376,8 +1993,12 @@ Scope {
                 targetW: root.targetWidth()
                 targetH: root.targetHeight()
                 wifiMaxPanelHeight: root.wifiMaxPanelHeight
+                btMaxPanelHeight: root.btMaxPanelHeight
                 mode: root.visualMode
                 handleStyle: root.handleStyle
+                liquidGlassEnabled: root.liquidGlassEnabled
+                idleWidth: root.peekWidth
+                idleHeight: root.peekHeight
                 forceExpanded: root.interactionOpen
                 appName: root.appName
                 title: root.title
@@ -1404,6 +2025,28 @@ Scope {
                 batteryHoverText: root.batteryHoverText
                 batteryCharging: root.batteryPluggedIn()
                 batteryLevel: root.batteryLevel()
+                batteryAvailable: root.batteryAvailable()
+                batteryHealth: root.batteryHealth
+                batteryCycles: root.batteryCycles
+                batteryFullCapacityWh: root.batteryFullCapacityWh
+                batteryDesignCapacityWh: root.batteryDesignCapacityWh
+                batteryVoltage: root.batteryVoltage
+                batteryPower: root.batteryPower
+                batteryStatus: root.batteryStatus
+                batteryModel: root.batteryModel
+                batteryThresholdSupported: root.batteryThresholdSupported
+                batteryThresholdEnabled: root.batteryThresholdEnabled
+                batteryThresholdBusy: root.batteryThresholdBusy
+                batteryThresholdStart: root.batteryThresholdStart
+                batteryThresholdEnd: root.batteryThresholdEnd
+                batteryThresholdStatusText: root.batteryThresholdStatusText
+                powerProfilesAvailable: root.powerProfilesAvailable
+                availablePowerProfiles: root.availablePowerProfiles
+                activePowerProfile: root.activePowerProfile
+                powerProfileBusy: root.powerProfileBusy
+                powerProfileStatusText: root.powerProfileStatusText
+                performanceDegraded: root.performanceDegraded
+                performanceInhibited: root.performanceInhibited
                 wifiConnected: root.wifiConnected
                 wifiSsid: root.wifiSsid
                 wifiSignal: root.wifiSignal
@@ -1411,6 +2054,9 @@ Scope {
                 btConnected: root.btConnected
                 btDeviceName: root.btDeviceName
                 btBattery: root.btBattery
+                btDiscovering: root.btDiscovering
+                btDevices: root.btDevices
+                btStatusText: root.btStatusText
                 timeText: root.hoverTimeText
                 dateText: root.hoverDateText
                 wifiRadioEnabled: root.wifiRadioEnabled
@@ -1438,20 +2084,34 @@ Scope {
                     root.showIdle();
                 }
                 onWifiSettingsRequested: root.toggleWifiPanel()
-                onWifiCloseRequested: root.showIdle()
+                onWifiCloseRequested: root.closePanelToWideIdle(root.wifiWidth)
                 onWifiToggleRadioRequested: root.toggleWifiRadio()
                 onWifiRowRequested: ssid => root.requestWifiExpand(ssid)
                 onWifiConnectRequested: (ssid, secured) => root.connectToWifiNetwork(ssid, secured)
                 onWifiDisconnectRequested: ssid => root.disconnectFromWifiNetwork(ssid)
                 onWifiPasswordChanged: text => root.wifiPasswordDraft = text
+                onBtCloseRequested: root.closePanelToWideIdle(root.btWidth)
+                onBtToggleRadioRequested: root.toggleBluetoothRadio()
+                onBtRefreshRequested: root.refreshBluetoothDevices()
+                onBtDeviceRequested: device => root.toggleBluetoothDevice(device)
+                onBatteryRequested: root.toggleBatteryPanel()
+                onBatteryCloseRequested: root.closePanelToWideIdle(root.batteryWidth)
+                onBatteryToggleThresholdRequested: root.toggleBatteryThreshold()
+                onPowerProfileRequested: profile => root.setPowerProfile(profile)
                 onAppsSettingsRequested: root.toggleAppsPanel()
-                onAppsCloseRequested: root.showIdle()
+                onGlacierSettingsRequested: root.toggleSettingsPanel()
+                onSettingsCloseRequested: root.closePanelToWideIdle(root.settingsWidth)
+                onLiquidGlassRequested: enabled => root.setLiquidGlassEnabled(enabled)
+                onIdleWidthRequested: width => root.setIdleWidth(width)
+                onIdleHeightRequested: height => root.setIdleHeight(height)
+                onSettingsResetRequested: root.resetVisualSettings()
+                onAppsCloseRequested: root.closePanelToWideIdle(root.appsWidth)
                 onAppsPickerToggleRequested: root.toggleAppsPicker()
                 onAppsSearchChanged: text => root.appsSearchDraft = text
                 onAppsSearchAccepted: root.launchTopSearchMatch()
                 onAppsFavoriteToggleRequested: id => root.toggleFavoriteApp(id)
                 onAppsLaunchRequested: id => root.launchFavoriteApp(id)
-                onBtSettingsRequested: btSettingsProc.exec(["bluedevil-wizard"])
+                onBtSettingsRequested: root.toggleBluetoothPanel()
                 onSeekRequested: position => root.mediaSeek(position)
                 onHandleStyleRequested: style => root.setHandleStyle(style)
             }
@@ -1474,7 +2134,10 @@ Scope {
                     circular: true
                     active: root.trayVisible && root.batteryAvailable() && root.batteryPluggedIn()
                     dismissed: root.trayBatteryDismissed
-                    onClicked: root.trayBatteryDismissed = true
+                    onClicked: {
+                        root.trayBatteryDismissed = true;
+                        root.toggleBatteryPanel();
+                    }
                 }
 
                 Behavior on opacity {
@@ -1604,9 +2267,10 @@ Scope {
                 width: island.width
                 height: root.mode === "idle" && !root.interactionOpen ? Math.max(root.reservedZone, island.height) : island.height
                 hoverEnabled: true
-                acceptedButtons: root.visualMode === "media" || root.visualMode === "wifi" || root.visualMode === "apps" || root.interactionOpen ? Qt.NoButton : Qt.LeftButton
+                acceptedButtons: root.visualMode === "media" || root.visualMode === "wifi" || root.visualMode === "bluetooth" || root.visualMode === "battery" || root.visualMode === "settings" || root.visualMode === "apps" || root.interactionOpen ? Qt.NoButton : Qt.LeftButton
                 cursorShape: Qt.PointingHandCursor
                 onEntered: root.keepInteractionOpen(true)
+                onPositionChanged: mouse => root.maybeFinishExitPreview(mouse.x, width)
                 onExited: {
                     root.mediaHoverSuppressed = false;
                     root.scheduleInteractionClose();
@@ -1670,6 +2334,39 @@ Scope {
 
         function apps(): void {
             root.toggleAppsPanel();
+        }
+
+        function wifi(): void {
+            root.toggleWifiPanel();
+        }
+
+        function bluetooth(): void {
+            root.toggleBluetoothPanel();
+        }
+
+        function battery(): void {
+            root.toggleBatteryPanel();
+        }
+
+        function settings(): void {
+            root.toggleSettingsPanel();
+        }
+
+        function liquidGlass(enabled: string): void {
+            root.setLiquidGlassEnabled(root.boolFromIpc(enabled));
+        }
+
+        function idleSize(width: int, height: int): void {
+            root.setIdleWidth(width);
+            root.setIdleHeight(height);
+        }
+
+        function batteryLimit(enabled: string): void {
+            root.setBatteryThreshold(root.boolFromIpc(enabled));
+        }
+
+        function powerProfile(profile: string): void {
+            root.setPowerProfile(profile);
         }
 
         function demo(): void {
