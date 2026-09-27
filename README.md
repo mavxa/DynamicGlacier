@@ -4,7 +4,7 @@ Dynamic Glacier is a native QML/Quickshell control island for Hyprland.
 
 It keeps media, Wi-Fi, Bluetooth, battery health, favorite apps, privacy activity,
 and lightweight desktop feedback in one animated top-center surface. The default
-look stays compact and OLED-friendly; an experimental Liquid Glass mode adds
+look stays compact and OLED-friendly; an optional Frosted Glass mode adds
 real compositor-backed transparency and blur when you want the desktop to show
 through.
 
@@ -12,7 +12,7 @@ No Electron, webview, AGS, EWW, or JS/HTML/CSS UI stack — just Quickshell,
 QtQuick, and native Linux services.
 
 <p align="center">
-  <img src="public/idlelg.jpg" alt="Dynamic Glacier with experimental Liquid Glass enabled" width="100%">
+  <img src="public/idlelg.jpg" alt="Dynamic Glacier with Frosted Glass enabled" width="100%">
 </p>
 
 ## Install
@@ -194,14 +194,15 @@ bash uninstall.sh --yes
 </details>
 
 <details open>
-<summary><b>Experimental Liquid Glass</b></summary>
+<summary><b>Frosted Glass</b></summary>
 
-Liquid Glass uses Hyprland's real backdrop blur with a translucent QML surface.
-It can be enabled from Glacier settings and applies consistently to every state.
+Frosted Glass uses Hyprland's real backdrop blur with a translucent QML surface.
+It can be enabled from Glacier settings for expanded panels. The resting strip
+stays solid, while the collapsed bump keeps a darker, quieter finish.
 
 <table>
   <tr>
-    <td width="50%"><img src="public/medialg.jpg" alt="Liquid Glass media player"></td>
+    <td width="50%"><img src="public/medialg.jpg" alt="Frosted Glass media player"></td>
     <td width="50%"><img src="public/settingslg.jpg" alt="Dynamic Glacier settings"></td>
   </tr>
   <tr>
@@ -209,23 +210,23 @@ It can be enabled from Glacier settings and applies consistently to every state.
     <td align="center"><sub>Settings</sub></td>
   </tr>
   <tr>
-    <td><img src="public/wifilg.jpg" alt="Liquid Glass Wi-Fi manager"></td>
-    <td><img src="public/bluetoothlg.jpg" alt="Liquid Glass Bluetooth manager"></td>
+    <td><img src="public/wifilg.jpg" alt="Frosted Glass Wi-Fi manager"></td>
+    <td><img src="public/bluetoothlg.jpg" alt="Frosted Glass Bluetooth manager"></td>
   </tr>
   <tr>
     <td align="center"><sub>Wi-Fi</sub></td>
     <td align="center"><sub>Bluetooth</sub></td>
   </tr>
   <tr>
-    <td><img src="public/batterylg.jpg" alt="Liquid Glass battery panel"></td>
-    <td><img src="public/favoriteslg.jpg" alt="Liquid Glass favorite apps"></td>
+    <td><img src="public/batterylg.jpg" alt="Frosted Glass battery panel"></td>
+    <td><img src="public/favoriteslg.jpg" alt="Frosted Glass favorite apps"></td>
   </tr>
   <tr>
     <td align="center"><sub>Battery health and power profiles</sub></td>
     <td align="center"><sub>Favorite apps</sub></td>
   </tr>
   <tr>
-    <td colspan="2"><img src="public/soundlg.jpg" alt="Liquid Glass volume feedback"></td>
+    <td colspan="2"><img src="public/soundlg.jpg" alt="Frosted Glass volume feedback"></td>
   </tr>
   <tr>
     <td colspan="2" align="center"><sub>Volume feedback</sub></td>
@@ -242,7 +243,7 @@ It can be enabled from Glacier settings and applies consistently to every state.
 
 - Pure-black top-center island for Hyprland.
 - OLED-friendly idle handle with `bump` and barely visible `strip` modes.
-- Optional experimental Liquid Glass across every Glacier state, backed by Hyprland blur rather than a flat translucent color.
+- Optional Frosted Glass for expanded surfaces, with a solid strip and a darker collapsed bump.
 - Anti-corner notch smoothly merging island into screen edge.
 - Hover expansion that can overlap windows instead of constantly resizing the Hyprland layout.
 - Small constant reserved zone, so normal windows do not jump around.
@@ -255,7 +256,7 @@ It can be enabled from Glacier settings and applies consistently to every state.
 - Wi-Fi status and a built-in `nmcli` network manager with saved-profile reconnects.
 - Native BlueZ Bluetooth panel with radio toggle, discovery, device connect/disconnect, and battery status.
 - Clickable battery panel with health, cycles, capacity, voltage, the hardware-supported UPower charge limit, and system power-profile switching.
-- In-island settings for Liquid Glass and idle width/height, saved automatically between restarts.
+- In-island settings for Frosted Glass and idle width/height, saved automatically between restarts.
 - Persistent `bump` / `strip` selection.
 - Settings access from idle, media, Wi-Fi, Bluetooth, battery, favorites, and notification states.
 - Microphone and camera privacy dots with separate colors and non-overlapping layout.
@@ -268,12 +269,15 @@ It can be enabled from Glacier settings and applies consistently to every state.
 <details>
 <summary><b>Customization</b></summary>
 
-Open the gear inside Glacier to toggle experimental Liquid Glass, resize the
+Open the gear inside Glacier to toggle Frosted Glass, adjust its opacity, resize the
 expanded idle surface, or reset the visual settings. Changes are saved
 automatically in Quickshell's per-config state directory.
 
 The `bump` / `strip` handle selector lives in the idle and media headers and is
 persisted through the same settings store.
+
+Opacity ranges from 20% to 100% (85% by default) and affects the background,
+so text and controls stay readable. Existing Liquid Glass settings are preserved.
 
 Additional defaults live in `quickshell/modules/dynamicGlacier/DynamicGlacier.qml`:
 
@@ -367,7 +371,8 @@ quickshell ipc --path quickshell call dynamicGlacier bluetooth
 quickshell ipc --path quickshell call dynamicGlacier battery
 quickshell ipc --path quickshell call dynamicGlacier apps
 quickshell ipc --path quickshell call dynamicGlacier settings
-quickshell ipc --path quickshell call dynamicGlacier liquidGlass true
+quickshell ipc --path quickshell call dynamicGlacier frostedGlass true
+quickshell ipc --path quickshell call dynamicGlacier glassOpacity 85
 quickshell ipc --path quickshell call dynamicGlacier idleSize 360 140
 quickshell ipc --path quickshell call dynamicGlacier batteryLimit true
 quickshell ipc --path quickshell call dynamicGlacier batteryLimit false

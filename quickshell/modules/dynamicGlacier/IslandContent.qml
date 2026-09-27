@@ -28,7 +28,8 @@ Item {
     property bool forceExpanded: false
     property bool mediaAvailable: false
     property string handleStyle: "bump"
-    property bool liquidGlassEnabled: false
+    property bool frostedGlassEnabled: false
+    property real glassOpacity: 0.85
     property int idleWidth: 340
     property int idleHeight: 132
     property string batteryHoverText: ""
@@ -124,13 +125,13 @@ Item {
 
     // Favorites dock metrics — same token style as the Wi-Fi panel, so the surface
     // can size itself to the grid plus whatever the picker drawer is showing.
-    readonly property int appsPanelPadding: 14
-    readonly property int appsHeaderHeight: 30
+    readonly property int appsPanelPadding: 16
+    readonly property int appsHeaderHeight: 32
     readonly property int appsSectionSpacing: 10
     readonly property int appsGridSpacing: 8
     readonly property int appsGridColumns: 4
     readonly property int appsGridRows: 2
-    readonly property int appsTileHeight: 62
+    readonly property int appsTileHeight: 72
     readonly property int appsGridHeight: root.appsTileHeight * root.appsGridRows + root.appsGridSpacing * (root.appsGridRows - 1)
     readonly property int appsPickerToggleHeight: 30
     readonly property int appsPickerRowHeight: 34
@@ -193,7 +194,8 @@ Item {
     signal powerProfileRequested(string profile)
     signal glacierSettingsRequested
     signal settingsCloseRequested
-    signal liquidGlassRequested(bool enabled)
+    signal frostedGlassRequested(bool enabled)
+    signal glassOpacityRequested(real opacity)
     signal idleWidthRequested(int width)
     signal idleHeightRequested(int height)
     signal settingsResetRequested
@@ -1043,13 +1045,15 @@ Item {
         id: settingsContent
 
         anchors.fill: parent
-        liquidGlassEnabled: root.liquidGlassEnabled
+        frostedGlassEnabled: root.frostedGlassEnabled
+        glassOpacity: root.glassOpacity
         idleWidth: root.idleWidth
         idleHeight: root.idleHeight
         fontFamily: root.fontFamily
         morph: root.settingsMorph
         onCloseRequested: root.settingsCloseRequested()
-        onLiquidGlassRequested: enabled => root.liquidGlassRequested(enabled)
+        onFrostedGlassRequested: enabled => root.frostedGlassRequested(enabled)
+        onGlassOpacityRequested: opacity => root.glassOpacityRequested(opacity)
         onIdleWidthRequested: width => root.idleWidthRequested(width)
         onIdleHeightRequested: height => root.idleHeightRequested(height)
         onResetRequested: root.settingsResetRequested()

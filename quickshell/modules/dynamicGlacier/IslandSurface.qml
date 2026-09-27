@@ -29,7 +29,8 @@ Item {
     property bool forceExpanded: false
     property bool mediaAvailable: false
     property string handleStyle: "bump"
-    property bool liquidGlassEnabled: false
+    property bool frostedGlassEnabled: false
+    property real glassOpacity: 0.85
     property int idleWidth: 340
     property int idleHeight: 132
     property string batteryHoverText: ""
@@ -78,7 +79,10 @@ Item {
     property real volumeMorph: 0
 
     readonly property bool expanded: mode !== "idle" || forceExpanded
-    readonly property bool liquidGlassActive: root.liquidGlassEnabled
+    readonly property bool frostedGlassActive: root.frostedGlassEnabled && (root.expanded || root.handleStyle !== "strip")
+    // Keep the resting bump almost black; stronger translucency belongs to
+    // expanded panels. The strip stays completely solid while collapsed.
+    readonly property real surfaceOpacity: root.expanded ? root.glassOpacity : Math.max(0.97, root.glassOpacity)
     // The volume pill rounds all the way to a capsule as it morphs in; every other
     // expanded shape keeps the softer island corner.
     readonly property real expandedBottomRadius: {
@@ -87,7 +91,7 @@ Item {
         return islandRadius + (height / 2 - islandRadius) * root.volumeMorph;
     }
     readonly property real bottomRadius: Math.max(1, Math.min(height / 2, expanded ? expandedBottomRadius : Math.min(height * 0.42, 8)))
-    readonly property color surfaceColor: root.liquidGlassActive ? "#d9070708" : (!expanded && handleStyle === "strip" ? "#0c0c0c" : "#000000")
+    readonly property color surfaceColor: root.frostedGlassActive ? Qt.rgba(7 / 255, 7 / 255, 8 / 255, root.surfaceOpacity) : (!expanded && handleStyle === "strip" ? "#0c0c0c" : "#000000")
     readonly property real antiCornerRadius: root.expanded || handleStyle === "strip" ? Math.min(3, height * 0.6) : Math.min(2.5, height * 0.12)
 
     property bool wifiRadioEnabled: true
@@ -156,7 +160,8 @@ Item {
     signal powerProfileRequested(string profile)
     signal glacierSettingsRequested
     signal settingsCloseRequested
-    signal liquidGlassRequested(bool enabled)
+    signal frostedGlassRequested(bool enabled)
+    signal glassOpacityRequested(real opacity)
     signal idleWidthRequested(int width)
     signal idleHeightRequested(int height)
     signal settingsResetRequested
@@ -291,10 +296,12 @@ Item {
         anchors.fill: parent
         clip: true
 
-        LiquidGlassSurface {
+        FrostedGlassSurface {
             z: 0
             anchors.fill: parent
-            active: root.liquidGlassActive
+            active: root.frostedGlassActive
+            surfaceOpacity: root.surfaceOpacity
+            edgeStrength: root.expanded ? 1 : 0.12
             bottomRadius: root.bottomRadius
             fallbackColor: !root.expanded && root.handleStyle === "strip" ? "#0c0c0c" : "#000000"
         }
@@ -377,7 +384,8 @@ Item {
             volumeKind: root.volumeKind
             mode: root.mode
             handleStyle: root.handleStyle
-            liquidGlassEnabled: root.liquidGlassEnabled
+            frostedGlassEnabled: root.frostedGlassEnabled
+            glassOpacity: root.glassOpacity
             idleWidth: root.idleWidth
             idleHeight: root.idleHeight
             forceExpanded: root.forceExpanded
@@ -476,7 +484,8 @@ Item {
             onPowerProfileRequested: profile => root.powerProfileRequested(profile)
             onGlacierSettingsRequested: root.glacierSettingsRequested()
             onSettingsCloseRequested: root.settingsCloseRequested()
-            onLiquidGlassRequested: enabled => root.liquidGlassRequested(enabled)
+            onFrostedGlassRequested: enabled => root.frostedGlassRequested(enabled)
+            onGlassOpacityRequested: opacity => root.glassOpacityRequested(opacity)
             onIdleWidthRequested: width => root.idleWidthRequested(width)
             onIdleHeightRequested: height => root.idleHeightRequested(height)
             onSettingsResetRequested: root.settingsResetRequested()
