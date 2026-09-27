@@ -79,7 +79,10 @@ Item {
     property real volumeMorph: 0
 
     readonly property bool expanded: mode !== "idle" || forceExpanded
-    readonly property bool frostedGlassActive: root.frostedGlassEnabled
+    readonly property bool frostedGlassActive: root.frostedGlassEnabled && (root.expanded || root.handleStyle !== "strip")
+    // Keep the resting bump almost black; stronger translucency belongs to
+    // expanded panels. The strip stays completely solid while collapsed.
+    readonly property real surfaceOpacity: root.expanded ? root.glassOpacity : Math.max(0.97, root.glassOpacity)
     // The volume pill rounds all the way to a capsule as it morphs in; every other
     // expanded shape keeps the softer island corner.
     readonly property real expandedBottomRadius: {
@@ -88,7 +91,7 @@ Item {
         return islandRadius + (height / 2 - islandRadius) * root.volumeMorph;
     }
     readonly property real bottomRadius: Math.max(1, Math.min(height / 2, expanded ? expandedBottomRadius : Math.min(height * 0.42, 8)))
-    readonly property color surfaceColor: root.frostedGlassActive ? Qt.rgba(7 / 255, 7 / 255, 8 / 255, root.glassOpacity) : (!expanded && handleStyle === "strip" ? "#0c0c0c" : "#000000")
+    readonly property color surfaceColor: root.frostedGlassActive ? Qt.rgba(7 / 255, 7 / 255, 8 / 255, root.surfaceOpacity) : (!expanded && handleStyle === "strip" ? "#0c0c0c" : "#000000")
     readonly property real antiCornerRadius: root.expanded || handleStyle === "strip" ? Math.min(3, height * 0.6) : Math.min(2.5, height * 0.12)
 
     property bool wifiRadioEnabled: true
@@ -297,7 +300,8 @@ Item {
             z: 0
             anchors.fill: parent
             active: root.frostedGlassActive
-            surfaceOpacity: root.glassOpacity
+            surfaceOpacity: root.surfaceOpacity
+            edgeStrength: root.expanded ? 1 : 0.12
             bottomRadius: root.bottomRadius
             fallbackColor: !root.expanded && root.handleStyle === "strip" ? "#0c0c0c" : "#000000"
         }

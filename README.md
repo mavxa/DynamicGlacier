@@ -197,7 +197,8 @@ bash uninstall.sh --yes
 <summary><b>Frosted Glass</b></summary>
 
 Frosted Glass uses Hyprland's real backdrop blur with a translucent QML surface.
-It can be enabled from Glacier settings and applies consistently to every state.
+It can be enabled from Glacier settings for expanded panels. The resting strip
+stays solid, while the collapsed bump keeps a darker, quieter finish.
 
 <table>
   <tr>
@@ -242,7 +243,7 @@ It can be enabled from Glacier settings and applies consistently to every state.
 
 - Pure-black top-center island for Hyprland.
 - OLED-friendly idle handle with `bump` and barely visible `strip` modes.
-- Optional Frosted Glass across every Glacier state, backed by Hyprland blur rather than a flat translucent color.
+- Optional Frosted Glass for expanded surfaces, with a solid strip and a darker collapsed bump.
 - Anti-corner notch smoothly merging island into screen edge.
 - Hover expansion that can overlap windows instead of constantly resizing the Hyprland layout.
 - Small constant reserved zone, so normal windows do not jump around.
