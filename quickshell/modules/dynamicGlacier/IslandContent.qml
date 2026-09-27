@@ -125,13 +125,13 @@ Item {
 
     // Favorites dock metrics — same token style as the Wi-Fi panel, so the surface
     // can size itself to the grid plus whatever the picker drawer is showing.
-    readonly property int appsPanelPadding: 14
-    readonly property int appsHeaderHeight: 30
+    readonly property int appsPanelPadding: 16
+    readonly property int appsHeaderHeight: 32
     readonly property int appsSectionSpacing: 10
     readonly property int appsGridSpacing: 8
     readonly property int appsGridColumns: 4
     readonly property int appsGridRows: 2
-    readonly property int appsTileHeight: 62
+    readonly property int appsTileHeight: 72
     readonly property int appsGridHeight: root.appsTileHeight * root.appsGridRows + root.appsGridSpacing * (root.appsGridRows - 1)
     readonly property int appsPickerToggleHeight: 30
     readonly property int appsPickerRowHeight: 34

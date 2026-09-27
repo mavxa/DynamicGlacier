@@ -121,7 +121,7 @@ Scope {
     readonly property int batteryMinHeight: 132
     readonly property int settingsWidth: 500
     readonly property int settingsMinHeight: 132
-    readonly property int appsWidth: 340
+    readonly property int appsWidth: 500
     readonly property int appsMinHeight: 132
     readonly property int appsMaxPanelHeight: 470
     readonly property string fontFamily: "Noto Sans"
