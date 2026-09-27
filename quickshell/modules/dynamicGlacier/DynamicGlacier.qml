@@ -1935,7 +1935,9 @@ Scope {
         // The surface is transparent and input is limited to `mask`, so the extra
         // room costs nothing.
         implicitHeight: Math.max(root.windowHeight, root.wifiMaxPanelHeight + 32, root.btMaxPanelHeight + 32, root.settingsMinHeight + 180, root.appsMaxPanelHeight + 32)
-        visible: true
+        // Map the layer only after loading the saved handle style. Mapping with
+        // the default bump first briefly reserves 24px even for a saved strip.
+        visible: root.visualSettingsLoaded
 
         // end-4 already enables compositor blur for `quickshell:*` surfaces.
         // Other Hyprland setups can target this stable namespace explicitly.
