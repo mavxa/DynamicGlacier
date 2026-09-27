@@ -4,7 +4,8 @@ import QtQuick.Layouts
 Item {
     id: root
 
-    property bool liquidGlassEnabled: false
+    property bool frostedGlassEnabled: false
+    property real glassOpacity: 0.85
     property int idleWidth: 340
     property int idleHeight: 132
     property string fontFamily: "Noto Sans"
@@ -21,13 +22,14 @@ Item {
     readonly property real contentHeight: root.panelPadding * 2
                                           + root.headerHeight
                                           + root.glassRowHeight
-                                          + root.sizeRowHeight
+                                          + root.sizeRowHeight * 2
                                           + root.footerHeight
-                                          + root.sectionSpacing * 3
+                                          + root.sectionSpacing * 4
     readonly property real panelProgress: Math.max(0, Math.min(1, (root.morph - 0.22) / 0.78))
 
     signal closeRequested
-    signal liquidGlassRequested(bool enabled)
+    signal frostedGlassRequested(bool enabled)
+    signal glassOpacityRequested(real opacity)
     signal idleWidthRequested(int width)
     signal idleHeightRequested(int height)
     signal resetRequested
@@ -202,7 +204,7 @@ Item {
             radius: 14
             color: "#080808"
             border.width: 1
-            border.color: root.liquidGlassEnabled ? "#343434" : "#202020"
+            border.color: root.frostedGlassEnabled ? "#343434" : "#202020"
 
             RowLayout {
                 anchors.fill: parent
@@ -213,7 +215,7 @@ Item {
                 MIcon {
                     name: "water_drop"
                     size: 17
-                    color: root.liquidGlassEnabled ? "#f0f0f0" : "#777777"
+                    color: root.frostedGlassEnabled ? "#f0f0f0" : "#777777"
                 }
 
                 ColumnLayout {
@@ -225,37 +227,18 @@ Item {
                         spacing: 7
 
                         Text {
-                            text: "Liquid Glass"
+                            text: "Frosted Glass"
                             color: root.primaryText
                             font.family: root.fontFamily
                             font.pixelSize: 12
                             font.weight: Font.Bold
                         }
 
-                        Rectangle {
-                            Layout.preferredWidth: experimentalLabel.implicitWidth + 10
-                            Layout.preferredHeight: 16
-                            radius: 8
-                            color: "#141414"
-                            border.width: 1
-                            border.color: "#292929"
-
-                            Text {
-                                id: experimentalLabel
-
-                                anchors.centerIn: parent
-                                text: "EXPERIMENTAL"
-                                color: "#8d8d8d"
-                                font.family: root.fontFamily
-                                font.pixelSize: 8
-                                font.weight: Font.Bold
-                            }
-                        }
                     }
 
                     Text {
                         Layout.fillWidth: true
-                        text: "Real backdrop blur for every Glacier surface"
+                        text: "Translucent panels with backdrop blur"
                         color: root.secondaryText
                         elide: Text.ElideRight
                         font.family: root.fontFamily
@@ -267,17 +250,17 @@ Item {
                     Layout.preferredWidth: 40
                     Layout.preferredHeight: 22
                     radius: 11
-                    color: root.liquidGlassEnabled ? "#f0f0f0" : "#0a0a0a"
+                    color: root.frostedGlassEnabled ? "#f0f0f0" : "#0a0a0a"
                     border.width: 1
-                    border.color: root.liquidGlassEnabled ? "#f0f0f0" : "#292929"
+                    border.color: root.frostedGlassEnabled ? "#f0f0f0" : "#292929"
 
                     Rectangle {
                         width: 16
                         height: 16
                         radius: 8
                         y: 3
-                        x: root.liquidGlassEnabled ? parent.width - width - 3 : 3
-                        color: root.liquidGlassEnabled ? "#000000" : "#555555"
+                        x: root.frostedGlassEnabled ? parent.width - width - 3 : 3
+                        color: root.frostedGlassEnabled ? "#000000" : "#555555"
 
                         Behavior on x {
                             NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
@@ -287,10 +270,19 @@ Item {
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.liquidGlassRequested(!root.liquidGlassEnabled)
+                        onClicked: root.frostedGlassRequested(!root.frostedGlassEnabled)
                     }
                 }
             }
+        }
+
+        StepControl {
+            label: "OPACITY"
+            valueText: Math.round(root.glassOpacity * 100) + "%"
+            step: 5
+            enabled: root.frostedGlassEnabled
+            opacity: enabled ? 1 : 0.4
+            onValueRequested: delta => root.glassOpacityRequested((Math.round(root.glassOpacity * 100) + delta) / 100)
         }
 
         RowLayout {

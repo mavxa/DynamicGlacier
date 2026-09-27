@@ -7,6 +7,8 @@ Canvas {
     property real bottomRadius: 8
     property color fallbackColor: "#000000"
     property real glassAmount: active ? 1 : 0
+    property real surfaceOpacity: 0.85
+    property real edgeStrength: 1
 
     antialiasing: true
 
@@ -70,16 +72,19 @@ Canvas {
 
         // The pane stays mostly opaque. Its only variation is neutral alpha:
         // Hyprland supplies the pixels and blur underneath this surface.
+        const paneOpacity = Math.max(0.2, Math.min(1, root.surfaceOpacity));
+        const edge = root.edgeStrength * Math.min(1, (1 - paneOpacity) / 0.15);
         const body = context.createLinearGradient(0, 0, width, height);
-        body.addColorStop(0, "rgba(5, 5, 6, 0.88)");
-        body.addColorStop(0.48, "rgba(3, 3, 4, 0.84)");
-        body.addColorStop(1, "rgba(7, 7, 8, 0.87)");
+        body.addColorStop(0, Qt.rgba(5 / 255, 5 / 255, 6 / 255, Math.min(1, paneOpacity + 0.03)));
+        body.addColorStop(0.48, Qt.rgba(3 / 255, 3 / 255, 4 / 255, paneOpacity));
+        body.addColorStop(1, Qt.rgba(7 / 255, 7 / 255, 8 / 255, Math.min(1, paneOpacity + 0.02)));
         context.fillStyle = body;
         context.fillRect(0, 0, width, height);
 
         // Remove alpha from a broad inner edge. With Hyprland's ignore-alpha
         // threshold this exposes a sharper copy of the real background beside
         // the blurred centre, which reads as a curved, thicker rim.
+        context.globalAlpha = root.glassAmount * edge;
         context.globalCompositeOperation = "destination-out";
         root.traceLowerEdge(context, 3.1);
         context.lineWidth = 6.2;
@@ -133,6 +138,8 @@ Canvas {
     onBottomRadiusChanged: requestPaint()
     onFallbackColorChanged: requestPaint()
     onGlassAmountChanged: requestPaint()
+    onSurfaceOpacityChanged: requestPaint()
+    onEdgeStrengthChanged: requestPaint()
 
     Behavior on glassAmount {
         NumberAnimation { duration: 180; easing.type: Easing.OutCubic }

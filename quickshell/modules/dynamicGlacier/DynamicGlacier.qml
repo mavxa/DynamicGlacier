@@ -70,7 +70,8 @@ Scope {
     property int backlightMaxRaw: 0
     property date currentDateTime: new Date()
     property string handleStyle: "bump"
-    property bool liquidGlassEnabled: false
+    property bool frostedGlassEnabled: false
+    property real glassOpacity: 0.85
     property int peekWidth: 340
     property int peekHeight: 132
     property bool exitPreviewActive: false
@@ -403,8 +404,17 @@ Scope {
         root.saveVisualSettings();
     }
 
-    function setLiquidGlassEnabled(enabled) {
-        root.liquidGlassEnabled = enabled === true;
+    function setFrostedGlassEnabled(enabled) {
+        root.frostedGlassEnabled = enabled === true;
+        root.saveVisualSettings();
+    }
+
+    function setGlassOpacity(opacity) {
+        const value = Number(opacity);
+        if (!isFinite(value))
+            return;
+
+        root.glassOpacity = Math.max(0.2, Math.min(1, value));
         root.saveVisualSettings();
     }
 
@@ -427,7 +437,8 @@ Scope {
     }
 
     function resetVisualSettings() {
-        root.liquidGlassEnabled = false;
+        root.frostedGlassEnabled = false;
+        root.glassOpacity = 0.85;
         root.peekWidth = 340;
         root.peekHeight = 132;
         root.saveVisualSettings();
@@ -1399,7 +1410,11 @@ Scope {
             const parsed = JSON.parse(text);
 
             root.handleStyle = parsed.handleStyle === "strip" ? "strip" : "bump";
-            root.liquidGlassEnabled = parsed.liquidGlassEnabled === true;
+            // Preserve the old toggle when upgrading from Liquid Glass.
+            root.frostedGlassEnabled = (parsed.frostedGlassEnabled ?? parsed.liquidGlassEnabled) === true;
+            const opacity = parsed.glassOpacity;
+            root.glassOpacity = typeof opacity === "number" && isFinite(opacity)
+                ? Math.max(0.2, Math.min(1, opacity)) : 0.85;
             root.peekWidth = Math.max(300, Math.min(520, Math.round((Number(parsed.idleWidth) || 340) / 10) * 10));
             root.peekHeight = Math.max(112, Math.min(180, Math.round((Number(parsed.idleHeight) || 132) / 4) * 4));
         } catch (error) {
@@ -1416,7 +1431,8 @@ Scope {
 
         visualSettingsFile.setText(JSON.stringify({
             handleStyle: root.handleStyle,
-            liquidGlassEnabled: root.liquidGlassEnabled,
+            frostedGlassEnabled: root.frostedGlassEnabled,
+            glassOpacity: root.glassOpacity,
             idleWidth: root.peekWidth,
             idleHeight: root.peekHeight
         }, null, 2) + "\n");
@@ -1998,7 +2014,8 @@ Scope {
                 btMaxPanelHeight: root.btMaxPanelHeight
                 mode: root.visualMode
                 handleStyle: root.handleStyle
-                liquidGlassEnabled: root.liquidGlassEnabled
+                frostedGlassEnabled: root.frostedGlassEnabled
+                glassOpacity: root.glassOpacity
                 idleWidth: root.peekWidth
                 idleHeight: root.peekHeight
                 forceExpanded: root.interactionOpen
@@ -2103,7 +2120,8 @@ Scope {
                 onAppsSettingsRequested: root.toggleAppsPanel()
                 onGlacierSettingsRequested: root.toggleSettingsPanel()
                 onSettingsCloseRequested: root.closePanelToWideIdle(root.settingsWidth)
-                onLiquidGlassRequested: enabled => root.setLiquidGlassEnabled(enabled)
+                onFrostedGlassRequested: enabled => root.setFrostedGlassEnabled(enabled)
+                onGlassOpacityRequested: opacity => root.setGlassOpacity(opacity)
                 onIdleWidthRequested: width => root.setIdleWidth(width)
                 onIdleHeightRequested: height => root.setIdleHeight(height)
                 onSettingsResetRequested: root.resetVisualSettings()
@@ -2355,7 +2373,16 @@ Scope {
         }
 
         function liquidGlass(enabled: string): void {
-            root.setLiquidGlassEnabled(root.boolFromIpc(enabled));
+            // Compatibility for existing key bindings and scripts.
+            root.setFrostedGlassEnabled(root.boolFromIpc(enabled));
+        }
+
+        function frostedGlass(enabled: string): void {
+            root.setFrostedGlassEnabled(root.boolFromIpc(enabled));
+        }
+
+        function glassOpacity(percent: int): void {
+            root.setGlassOpacity(percent / 100);
         }
 
         function idleSize(width: int, height: int): void {
