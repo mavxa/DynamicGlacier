@@ -1,5 +1,7 @@
 # Dynamic Glacier
 
+[Try the interactive web demo](https://dynamic-glacier.mavxa.tech/) · Explore the island in your browser with simulated desktop data.
+
 Dynamic Glacier is a native QML/Quickshell control island for Hyprland.
 
 It keeps media, Wi-Fi, Bluetooth, battery health, favorite apps, privacy activity,
